@@ -74,19 +74,56 @@
                         <div class="card-header">
                             <h5 class="mb-0">
                                 <i class="bi bi-trophy"></i>
-                                명예의 전당
+                                명예의 전당 - 자리 연습
                             </h5>
                         </div>
                         <div class="card-body">
+                            {% if top_records %}
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th class="text-center">순위</th>
+                                            <th>학생</th>
+                                            <th class="text-center">점수</th>
+                                            <th class="text-center">분당 타수</th>
+                                            <th class="text-center">정확도</th>
+                                            <th class="text-center">연습 일시</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for record in top_records %}
+                                        <tr>
+                                            <td class="text-center">
+                                                {% if loop.index <= 3 %}
+                                                <span class="badge bg-{% if loop.index == 1 %}warning{% elif loop.index == 2 %}secondary{% else %}dark{% endif %}">
+                                                    {{ loop.index }}
+                                                </span>
+                                                {% else %}
+                                                {{ loop.index }}
+                                                {% endif %}
+                                            </td>
+                                            <td>{{ record.student_id }}</td>
+                                            <td class="text-center"><strong>{{ record.score }}</strong></td>
+                                            <td class="text-center">{{ record.wpm }}</td>
+                                            <td class="text-center">{{ record.accuracy|round(1) }}%</td>
+                                            <td class="text-center">{{ record.created_at.strftime('%m/%d %H:%M') }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% else %}
                             <p class="text-muted text-center">
-                                연습을 완료하면 여기에 순위가 표시됩니다!
+                                아직 기록이 없습니다. 첫 번째 도전자가 되어보세요!
                             </p>
                             <div class="text-center">
-                                <button class="btn btn-outline-secondary" disabled>
-                                    <i class="bi bi-bar-chart"></i>
-                                    순위 보기 (준비 중)
-                                </button>
+                                <a href="{{ url_for('practice', mode='자리') }}" class="btn btn-primary">
+                                    <i class="bi bi-play-fill"></i>
+                                    자리 연습 시작하기
+                                </a>
                             </div>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
