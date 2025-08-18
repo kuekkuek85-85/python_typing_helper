@@ -107,7 +107,18 @@ PRACTICE_MODES = {
 @app.route('/')
 def index():
     """홈페이지 - 연습 모드 선택"""
-    return render_template('index.html', modes=PRACTICE_MODES)
+    try:
+        # 자리 연습 모드의 상위 10개 기록 조회
+        top_records = Record.query.filter_by(mode='자리')\
+            .order_by(Record.score.desc(), Record.accuracy.desc(), Record.wpm.desc(), Record.created_at.asc())\
+            .limit(10)\
+            .all()
+        
+        return render_template('index.html', modes=PRACTICE_MODES, top_records=top_records)
+    except Exception as e:
+        logging.error(f"홈페이지 로딩 실패: {e}")
+        # 에러 발생 시에도 페이지는 표시되도록
+        return render_template('index.html', modes=PRACTICE_MODES, top_records=[])
 
 @app.route('/practice/<mode>')
 def practice(mode):
