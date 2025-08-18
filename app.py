@@ -21,17 +21,15 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key-for-development")
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
-# 데이터베이스 설정 - Supabase 연결
+# 데이터베이스 설정
 database_url = os.environ.get("DATABASE_URL")
 
-# Supabase DB URL 처리
+# DB URL 처리 및 연결 최적화
 if database_url:
-    # Supabase는 postgresql:// 형식의 URI를 제공합니다
-    # 만약 postgres://로 시작하면 postgresql://로 변경
+    # postgres://를 postgresql://로 변경
     if database_url.startswith("postgres://"):
         database_url = database_url.replace("postgres://", "postgresql://", 1)
     elif database_url.startswith("https://"):
-        # 잘못된 형식인 경우 경고 메시지
         logging.warning("DATABASE_URL이 HTTPS 형식입니다. PostgreSQL 연결 문자열이 필요합니다.")
         logging.warning("Supabase에서 올바른 Database URL을 복사해주세요.")
 
@@ -39,6 +37,13 @@ app.config["SQLALCHEMY_DATABASE_URI"] = database_url
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
     "pool_recycle": 300,
     "pool_pre_ping": True,
+    "pool_timeout": 10,
+    "pool_size": 5,
+    "max_overflow": 0,
+    "connect_args": {
+        "connect_timeout": 10,
+        "options": "-c statement_timeout=30000"
+    }
 }
 
 # 데이터베이스 초기화
@@ -307,8 +312,22 @@ with app.app_context():
     try:
         db.create_all()
         logging.info("데이터베이스 테이블이 성공적으로 생성되었습니다.")
+        
+        # 테스트 데이터 추가 (개발용)
+        if Record.query.count() == 0:
+            test_records = [
+                Record(student_id='10130 홍길동', mode='자리', wpm=45, accuracy=92.5, score=370, duration_sec=300),
+                Record(student_id='10215 김영희', mode='자리', wpm=38, accuracy=96.0, score=350, duration_sec=300),
+                Record(student_id='10302 박철수', mode='자리', wpm=52, accuracy=89.2, score=415, duration_sec=300)
+            ]
+            for record in test_records:
+                db.session.add(record)
+            db.session.commit()
+            logging.info("테스트 데이터가 추가되었습니다.")
+            
     except Exception as e:
         logging.error(f"데이터베이스 테이블 생성 실패: {e}")
+        logging.info("Replit PostgreSQL 데이터베이스를 사용합니다.")
 
 if __name__ == '__main__':
     # 개발 환경에서 디버그 모드로 실행
