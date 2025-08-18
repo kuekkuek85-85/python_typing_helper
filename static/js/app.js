@@ -204,6 +204,9 @@ function handleUserInput() {
     
     // 다음 키 강조 업데이트
     highlightNextKey();
+    
+    // 텍스트 완료 확인 및 다음 텍스트 로드
+    checkTextCompletion();
 }
 
 function handleKeyDown(event) {
@@ -515,6 +518,46 @@ function handleKeyPress(event) {
     if (targetKey) {
         animateKey(targetKey);
     }
+}
+
+// 텍스트 완료 확인 및 다음 텍스트 로드
+function checkTextCompletion() {
+    if (!currentText || !isTimerRunning) return;
+    
+    // 현재 텍스트를 모두 정확히 입력했는지 확인
+    if (userTypedText.trim() === currentText.trim()) {
+        // 입력창 클리어
+        elements.userInput.value = '';
+        userTypedText = '';
+        
+        // 새로운 텍스트 로드
+        loadNextPracticeText();
+    }
+}
+
+// 다음 연습 텍스트 로드
+function loadNextPracticeText() {
+    if (!window.currentMode) return;
+    
+    // 로딩 표시
+    elements.practiceText.textContent = '다음 텍스트를 불러오는 중...';
+    
+    // API에서 새로운 연습 텍스트 가져오기
+    fetch(`/api/practice-text/${window.currentMode}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                currentText = data.text;
+                renderPracticeText();
+            } else {
+                elements.practiceText.textContent = '다음 텍스트를 불러올 수 없습니다.';
+                console.error('API 오류:', data.error);
+            }
+        })
+        .catch(error => {
+            elements.practiceText.textContent = '텍스트를 불러오는 중 오류가 발생했습니다.';
+            console.error('네트워크 오류:', error);
+        });
 }
 
 // 키보드 단축키 지원

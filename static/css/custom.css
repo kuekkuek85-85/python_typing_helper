@@ -25,7 +25,7 @@
     background: var(--bs-dark);
     border: 1px solid var(--bs-border-color);
     border-radius: 0.375rem;
-    padding: 1.5rem;
+    padding: 1rem;
     margin-bottom: 1rem;
 }
 
@@ -33,11 +33,13 @@
 .practice-text {
     font-family: 'Courier New', monospace;
     font-size: 1.2rem;
-    line-height: 1.8;
+    line-height: 1.6;
     letter-spacing: 0.5px;
     white-space: pre-wrap;
     word-wrap: break-word;
-    min-height: 120px;
+    min-height: 40px;
+    max-height: 60px;
+    overflow: hidden;
     color: var(--bs-body-color);
 }
 
@@ -75,7 +77,8 @@
     line-height: 1.6;
     letter-spacing: 0.5px;
     resize: vertical;
-    min-height: 120px;
+    min-height: 60px;
+    max-height: 80px;
 }
 
 /* 통계 숫자 강조 */
