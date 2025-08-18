@@ -107,7 +107,13 @@
                                             <td class="text-center"><strong>{{ record.score }}</strong></td>
                                             <td class="text-center">{{ record.wpm }}</td>
                                             <td class="text-center">{{ record.accuracy|round(1) }}%</td>
-                                            <td class="text-center">{{ record.created_at.strftime('%m/%d %H:%M') }}</td>
+                                            <td class="text-center">
+                                                {% if record.created_at %}
+                                                {{ record.created_at.strftime('%m/%d %H:%M') }}
+                                                {% else %}
+                                                -
+                                                {% endif %}
+                                            </td>
                                         </tr>
                                         {% endfor %}
                                     </tbody>
