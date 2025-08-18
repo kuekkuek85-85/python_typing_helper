@@ -21,11 +21,19 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key-for-development")
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
-# 데이터베이스 설정
+# 데이터베이스 설정 - Supabase 연결
 database_url = os.environ.get("DATABASE_URL")
-if database_url and database_url.startswith("https://"):
-    # Supabase URL을 PostgreSQL URL로 변환
-    database_url = database_url.replace("https://", "postgresql://", 1)
+
+# Supabase DB URL 처리
+if database_url:
+    # Supabase는 postgresql:// 형식의 URI를 제공합니다
+    # 만약 postgres://로 시작하면 postgresql://로 변경
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+    elif database_url.startswith("https://"):
+        # 잘못된 형식인 경우 경고 메시지
+        logging.warning("DATABASE_URL이 HTTPS 형식입니다. PostgreSQL 연결 문자열이 필요합니다.")
+        logging.warning("Supabase에서 올바른 Database URL을 복사해주세요.")
 
 app.config["SQLALCHEMY_DATABASE_URI"] = database_url
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
@@ -162,14 +170,13 @@ def create_record():
             return jsonify({'error': '올바르지 않은 연습 모드입니다.'}), 400
         
         # 새 기록 생성
-        new_record = Record(
-            student_id=student_id,
-            mode=mode,
-            wpm=wpm,
-            accuracy=accuracy,
-            score=score,
-            duration_sec=duration_sec
-        )
+        new_record = Record()
+        new_record.student_id = student_id
+        new_record.mode = mode
+        new_record.wpm = wpm
+        new_record.accuracy = accuracy
+        new_record.score = score
+        new_record.duration_sec = duration_sec
         
         db.session.add(new_record)
         db.session.commit()
