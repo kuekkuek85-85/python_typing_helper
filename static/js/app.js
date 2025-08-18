@@ -112,6 +112,9 @@ function setupEventListeners() {
             alert('교사 관리자 기능은 향후 버전에서 제공됩니다.');
         });
     }
+    
+    // 가상 키보드 설정
+    setupVirtualKeyboard();
 }
 
 function loadPracticeText() {
@@ -147,6 +150,9 @@ function renderPracticeText() {
         span.setAttribute('data-index', i);
         elements.practiceText.appendChild(span);
     }
+    
+    // 첫 번째 키 강조
+    highlightNextKey();
 }
 
 function startPractice() {
@@ -195,6 +201,9 @@ function handleUserInput() {
     if (isTimerRunning) {
         updateStats();
     }
+    
+    // 다음 키 강조 업데이트
+    highlightNextKey();
 }
 
 function handleKeyDown(event) {
@@ -412,8 +421,109 @@ function formatTime(seconds) {
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 }
 
+// 가상 키보드 설정 함수
+function setupVirtualKeyboard() {
+    const keys = document.querySelectorAll('.key');
+    keys.forEach(key => {
+        key.addEventListener('click', function() {
+            // 가상 키보드 클릭 시 해당 문자를 입력창에 추가
+            if (elements.userInput && !elements.userInput.disabled) {
+                const keyValue = this.dataset.key;
+                if (keyValue === ' ') {
+                    elements.userInput.value += ' ';
+                } else if (keyValue === 'Backspace') {
+                    elements.userInput.value = elements.userInput.value.slice(0, -1);
+                } else if (keyValue === 'Enter') {
+                    elements.userInput.value += '\n';
+                } else if (keyValue === 'Tab') {
+                    elements.userInput.value += '\t';
+                } else if (keyValue.length === 1) {
+                    elements.userInput.value += keyValue;
+                }
+                
+                // 키 애니메이션 효과
+                animateKey(this);
+                
+                // input 이벤트 발생
+                elements.userInput.dispatchEvent(new Event('input'));
+                elements.userInput.focus();
+            }
+        });
+    });
+}
+
+// 키 애니메이션 함수
+function animateKey(keyElement) {
+    keyElement.classList.add('active');
+    setTimeout(() => {
+        keyElement.classList.remove('active');
+    }, 200);
+}
+
+// 다음에 눌러야 할 키 강조
+function highlightNextKey() {
+    // 모든 키의 강조 효과 제거
+    document.querySelectorAll('.key').forEach(key => {
+        key.classList.remove('next-key');
+    });
+    
+    if (!currentText || userTypedText.length >= currentText.length) return;
+    
+    const nextChar = currentText[userTypedText.length];
+    const targetKey = findKeyForCharacter(nextChar);
+    
+    if (targetKey) {
+        targetKey.classList.add('next-key');
+    }
+}
+
+// 문자에 해당하는 키 찾기
+function findKeyForCharacter(char) {
+    const keys = document.querySelectorAll('.key');
+    
+    // 공백 처리
+    if (char === ' ') {
+        return document.querySelector('.key[data-key=" "]');
+    }
+    
+    // 엔터 처리
+    if (char === '\n') {
+        return document.querySelector('.key[data-key="Enter"]');
+    }
+    
+    // 탭 처리
+    if (char === '\t') {
+        return document.querySelector('.key[data-key="Tab"]');
+    }
+    
+    // 일반 문자 처리 (대소문자 구분 없이)
+    for (let key of keys) {
+        const keyValue = key.dataset.key;
+        if (keyValue && keyValue.toLowerCase() === char.toLowerCase()) {
+            return key;
+        }
+    }
+    
+    return null;
+}
+
+// 실제 키보드 입력 시 애니메이션
+function handleKeyPress(event) {
+    const pressedChar = event.key;
+    const targetKey = findKeyForCharacter(pressedChar);
+    
+    if (targetKey) {
+        animateKey(targetKey);
+    }
+}
+
 // 키보드 단축키 지원
 document.addEventListener('keydown', function(event) {
+    // 키보드 애니메이션 (연습 중일 때만)
+    if (isTimerRunning && elements.userInput && elements.userInput === document.activeElement) {
+        handleKeyPress(event);
+    }
+    
     // Ctrl+R 또는 F5로 리셋 (기본 새로고침 방지)
     if ((event.ctrlKey && event.key === 'r') || event.key === 'F5') {
         if (window.currentMode) {
