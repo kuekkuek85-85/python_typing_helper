@@ -47,11 +47,19 @@
                         <p class="card-text text-muted">
                             {{ mode_data.description }}
                         </p>
+                        {% if mode_key == '자리' %}
                         <a href="{{ url_for('practice', mode=mode_key) }}" 
                            class="btn btn-{{ mode_data.color }} btn-lg w-100">
                             <i class="bi bi-play-fill"></i>
                             시작하기
                         </a>
+                        {% else %}
+                        <button class="btn btn-{{ mode_data.color }} btn-lg w-100 coming-soon-btn" 
+                                data-bs-toggle="modal" data-bs-target="#comingSoonModal">
+                            <i class="bi bi-clock"></i>
+                            시작하기
+                        </button>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -92,6 +100,41 @@
             <p>&copy; 2025 파이썬 타자연습. 중학교 1학년 정보 교과를 위한 학습 도구입니다.</p>
         </div>
     </footer>
+
+    <!-- 추후 제공 예정 모달 -->
+    <div class="modal fade" id="comingSoonModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-clock text-warning"></i>
+                        추후 제공 예정
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <div class="mb-4">
+                        <i class="bi bi-tools text-muted" style="font-size: 3rem;"></i>
+                    </div>
+                    <h6>해당 연습 모드는 현재 개발 중입니다</h6>
+                    <p class="text-muted">
+                        낱말, 문장, 문단 연습 모드는 곧 업데이트될 예정입니다.<br>
+                        현재는 <strong>자리 연습</strong> 모드를 이용해주세요!
+                    </p>
+                </div>
+                <div class="modal-footer justify-content-center">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-circle"></i>
+                        닫기
+                    </button>
+                    <a href="{{ url_for('practice', mode='자리') }}" class="btn btn-primary">
+                        <i class="bi bi-play-fill"></i>
+                        자리 연습하기
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- 교사 로그인 모달 (향후 구현) -->
     <div class="modal fade" id="teacherLoginModal" tabindex="-1">
