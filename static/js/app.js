@@ -5,9 +5,68 @@ let timeRemaining = 300; // 5분 = 300초
 let isTimerRunning = false;
 let currentText = '';
 let userTypedText = '';
+let lastTypedLength = 0; // 마지막으로 타이핑한 길이 추적
 
 // 전역 상태 변수
 let practiceCompleted = false;
+
+// 효과음을 위한 Audio Context
+let audioContext = null;
+
+// 효과음 초기화
+function initAudio() {
+    try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (error) {
+        console.log('오디오 컨텍스트를 생성할 수 없습니다:', error);
+    }
+}
+
+// 맞을 때 효과음 (짧은 성공음)
+function playCorrectSound() {
+    if (!audioContext) return;
+    
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    // 밝은 톤의 짧은 음
+    oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+    oscillator.frequency.exponentialRampToValueAtTime(1000, audioContext.currentTime + 0.1);
+    
+    // 볼륨 설정 (낮게)
+    gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+    gainNode.gain.linearRampToValueAtTime(0.1, audioContext.currentTime + 0.01);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+    
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + 0.1);
+}
+
+// 틀릴 때 효과음 (짧은 에러음)
+function playIncorrectSound() {
+    if (!audioContext) return;
+    
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    // 낮은 톤의 짧은 음
+    oscillator.frequency.setValueAtTime(200, audioContext.currentTime);
+    oscillator.frequency.exponentialRampToValueAtTime(150, audioContext.currentTime + 0.15);
+    
+    // 볼륨 설정 (낮게)
+    gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+    gainNode.gain.linearRampToValueAtTime(0.08, audioContext.currentTime + 0.01);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.15);
+    
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + 0.15);
+}
 
 // DOM 요소들
 const elements = {
@@ -34,6 +93,7 @@ const elements = {
 document.addEventListener('DOMContentLoaded', function() {
     initializePage();
     setupEventListeners();
+    initAudio();
 });
 
 function initializePage() {
@@ -161,6 +221,7 @@ function startPractice() {
     // 입력창 완전 초기화
     elements.userInput.value = '';
     userTypedText = '';
+    lastTypedLength = 0;
     
     // UI 상태 변경
     elements.startBtn.disabled = true;
@@ -217,6 +278,11 @@ function handleUserInput() {
 }
 
 function handleKeyDown(event) {
+    // 첫 번째 키 입력 시 오디오 컨텍스트 활성화
+    if (audioContext && audioContext.state === 'suspended') {
+        audioContext.resume();
+    }
+    
     // 연습이 시작되지 않았다면 자동 시작
     if (!isTimerRunning && event.key.length === 1) {
         startPractice();
@@ -225,6 +291,21 @@ function handleKeyDown(event) {
 
 function updateTextHighlight() {
     const spans = elements.practiceText.querySelectorAll('span');
+    
+    // 새로 타이핑된 문자가 있는 경우 효과음 재생
+    if (userTypedText.length > lastTypedLength) {
+        const newCharIndex = userTypedText.length - 1;
+        if (newCharIndex >= 0 && newCharIndex < currentText.length) {
+            if (userTypedText[newCharIndex] === currentText[newCharIndex]) {
+                playCorrectSound();
+            } else {
+                playIncorrectSound();
+            }
+        }
+    }
+    
+    // 마지막 타이핑 길이 업데이트
+    lastTypedLength = userTypedText.length;
     
     for (let i = 0; i < spans.length; i++) {
         const span = spans[i];
@@ -317,6 +398,7 @@ function resetPractice() {
     isTimerRunning = false;
     timeRemaining = 300;
     userTypedText = '';
+    lastTypedLength = 0;
     startTime = null;
     
     // UI 초기화
