@@ -230,14 +230,14 @@ def get_practice_text(mode):
     # 정적 데이터에서 랜덤하게 선택
     import random
     
+    # 자리 연습용 키워드 풀
+    keyboard_chars = ['asdf', 'jkl;', 'qwer', 'uiop', 'zxcv', 'bnm,']
+    python_keywords = ['if', 'else', 'def', 'for', 'while', 'and', 'or', 'not', 'in', 'is', 'True', 'False', 'None']
+    python_functions = ['print()', 'input()', 'len()', 'str()', 'int()', 'float()', 'bool()', 'list()', 'dict()']
+    symbols = ['[]', '{}', '()', '""', "''", ':', ';', ',', '.', '/', '?', '!', '@', '#', '$', '%', '^', '&', '*', '-', '+', '=', '_']
+    
     practice_texts = {
-        '자리': [
-            'asdf jkl; qwer uiop zxcv bnm, asdf jkl;',
-            'print() input() len() str() int() float() bool()',
-            '[] {} () "" \'\' : ; , . / ? ! @ # $ % ^ & * - + = _',
-            'def if else elif for while and or not in is',
-            'True False None return break continue pass global'
-        ],
+        '자리': [],  # 동적으로 생성됨
         '낱말': [
             'print input len str int float bool list dict tuple',
             'def if else elif for while and or not in is',
@@ -269,11 +269,21 @@ for num in numbers:
         ]
     }
     
-    texts = practice_texts.get(mode, [])
-    if not texts:
-        return jsonify({'error': '연습 텍스트를 찾을 수 없습니다.'}), 404
-    
-    selected_text = random.choice(texts)
+    if mode == '자리':
+        # 자리 연습의 경우 랜덤하게 섞인 텍스트 생성
+        all_items = keyboard_chars + python_keywords + python_functions + symbols
+        random.shuffle(all_items)
+        
+        # 15-20개 항목을 선택해서 하나의 연습 텍스트로 만들기
+        num_items = random.randint(15, 20)
+        selected_items = all_items[:num_items]
+        selected_text = ' '.join(selected_items)
+    else:
+        texts = practice_texts.get(mode, [])
+        if not texts:
+            return jsonify({'error': '연습 텍스트를 찾을 수 없습니다.'}), 404
+        
+        selected_text = random.choice(texts)
     
     return jsonify({
         'success': True,
