@@ -486,7 +486,20 @@ function highlightNextKey() {
     
     if (targetKey) {
         targetKey.classList.add('next-key');
+        
+        // 특수문자인 경우 Shift 키도 강조
+        if (isShiftRequired(nextChar)) {
+            document.querySelectorAll('.key[data-key="Shift"]').forEach(shiftKey => {
+                shiftKey.classList.add('next-key');
+            });
+        }
     }
+}
+
+// Shift 키가 필요한 문자인지 확인
+function isShiftRequired(char) {
+    const shiftChars = '!@#$%^&*()_+{}|:"<>?~ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    return shiftChars.includes(char);
 }
 
 // 문자에 해당하는 키 찾기
@@ -506,6 +519,26 @@ function findKeyForCharacter(char) {
     // 탭 처리
     if (char === '\t') {
         return document.querySelector('.key[data-key="Tab"]');
+    }
+    
+    // 특수문자 처리 (Shift + 숫자 조합)
+    const shiftNumberMap = {
+        '!': '1', '@': '2', '#': '3', '$': '4', '%': '5',
+        '^': '6', '&': '7', '*': '8', '(': '9', ')': '0'
+    };
+    
+    if (shiftNumberMap[char]) {
+        return document.querySelector(`.key[data-key="${shiftNumberMap[char]}"]`);
+    }
+    
+    // 기타 특수문자 처리 (Shift + 기타 키 조합)
+    const shiftSymbolMap = {
+        '~': '`', '_': '-', '+': '=', '{': '[', '}': ']', '|': '\\',
+        ':': ';', '"': "'", '<': ',', '>': '.', '?': '/'
+    };
+    
+    if (shiftSymbolMap[char]) {
+        return document.querySelector(`.key[data-key="${shiftSymbolMap[char]}"]`);
     }
     
     // 일반 문자 처리 (대소문자 구분 없이)
