@@ -524,8 +524,8 @@ function handleKeyPress(event) {
 function checkTextCompletion() {
     if (!currentText || !isTimerRunning) return;
     
-    // 현재 텍스트를 모두 정확히 입력했는지 확인
-    if (userTypedText.trim() === currentText.trim()) {
+    // 입력한 텍스트 길이가 현재 텍스트 길이와 같거나 크면 다음 텍스트로 넘어감
+    if (userTypedText.length >= currentText.length) {
         // 입력창 클리어
         elements.userInput.value = '';
         userTypedText = '';
