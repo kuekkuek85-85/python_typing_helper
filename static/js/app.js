@@ -68,6 +68,34 @@ function playIncorrectSound() {
     oscillator.stop(audioContext.currentTime + 0.15);
 }
 
+// 연습 완료 효과음 (승리음)
+function playCompleteSound() {
+    if (!audioContext) return;
+    
+    // 3단계 상승하는 멜로디 음
+    const frequencies = [523, 659, 784]; // C5, E5, G5
+    
+    frequencies.forEach((freq, index) => {
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        const startTime = audioContext.currentTime + (index * 0.15);
+        
+        oscillator.frequency.setValueAtTime(freq, startTime);
+        
+        // 볼륨 설정
+        gainNode.gain.setValueAtTime(0, startTime);
+        gainNode.gain.linearRampToValueAtTime(0.15, startTime + 0.05);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + 0.2);
+        
+        oscillator.start(startTime);
+        oscillator.stop(startTime + 0.2);
+    });
+}
+
 // DOM 요소들
 const elements = {
     timer: document.getElementById('timer'),
@@ -371,8 +399,13 @@ function endPractice() {
     // 최종 통계 계산
     updateStats();
     
-    // 완료 모달 표시
-    showCompleteModal();
+    // 연습 완료 효과음 재생
+    playCompleteSound();
+    
+    // 완료 모달 표시 (효과음 재생 후 약간 지연)
+    setTimeout(() => {
+        showCompleteModal();
+    }, 200);
 }
 
 function showCompleteModal() {
