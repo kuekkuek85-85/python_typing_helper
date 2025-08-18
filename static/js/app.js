@@ -44,7 +44,7 @@ function initializePage() {
     }
     
     // 연습 페이지인 경우
-    if (window.currentMode && practiceTexts[window.currentMode]) {
+    if (window.currentMode) {
         loadPracticeText();
     }
 }
