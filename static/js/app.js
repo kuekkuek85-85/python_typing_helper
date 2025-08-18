@@ -158,10 +158,17 @@ function renderPracticeText() {
 function startPractice() {
     if (isTimerRunning) return;
     
+    // 입력창 완전 초기화
+    elements.userInput.value = '';
+    userTypedText = '';
+    
     // UI 상태 변경
     elements.startBtn.disabled = true;
     elements.userInput.disabled = false;
     elements.userInput.focus();
+    
+    // 커서를 맨 앞으로 이동
+    elements.userInput.setSelectionRange(0, 0);
     
     // 타이머 시작
     startTime = Date.now();
@@ -318,6 +325,8 @@ function resetPractice() {
     elements.wpm.textContent = '0';
     elements.accuracy.textContent = '100%';
     elements.score.textContent = '0';
+    
+    // 입력창 완전 초기화
     elements.userInput.value = '';
     elements.userInput.disabled = true;
     elements.startBtn.disabled = false;
@@ -526,9 +535,10 @@ function checkTextCompletion() {
     
     // 입력한 텍스트 길이가 현재 텍스트 길이와 같거나 크면 다음 텍스트로 넘어감
     if (userTypedText.length >= currentText.length) {
-        // 입력창 클리어
+        // 입력창 완전 클리어 및 커서 위치 초기화
         elements.userInput.value = '';
         userTypedText = '';
+        elements.userInput.setSelectionRange(0, 0);
         
         // 새로운 텍스트 로드
         loadNextPracticeText();
