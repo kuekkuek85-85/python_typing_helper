@@ -39,34 +39,34 @@
 ---
 
 ## v0.1 프로젝트 스캐폴드
-- [ ] Flask 기본 서버 (`app.py`), 루트 라우트 반환(헬스체크)
-- [ ] 정적 폴더 `static/`와 템플릿 `templates/` 구성
-- [ ] 홈 페이지: 4개 모드 선택 카드(자리/낱말/문장/문단)
+- [x] Flask 기본 서버 (`app.py`), 루트 라우트 반환(헬스체크)
+- [x] 정적 폴더 `static/`와 템플릿 `templates/` 구성
+- [x] 홈 페이지: 4개 모드 선택 카드(자리/낱말/문장/문단)
 
 ## v0.2 자리 연습 UI + 타이머
-- [ ] 자리 연습 화면: 문제 문구, 입력창, 오타 하이라이트
-- [ ] 5분 카운트다운 타이머(클라)
-- [ ] 5분 이내 **저장 버튼 비활성화**
+- [x] 자리 연습 화면: 문제 문구, 입력창, 오타 하이라이트
+- [x] 5분 카운트다운 타이머(클라)
+- [x] 5분 이내 **저장 버튼 비활성화**
 
 ## v0.3 낱말/문장/문단 모드 추가
-- [ ] 각 모드별 예문 세트/로직 분리(난이도 곡선)
-- [ ] 문단 모드: 들여쓰기 가이드 표시
+- [x] 각 모드별 예문 세트/로직 분리(난이도 곡선)
+- [x] 문단 모드: 들여쓰기 가이드 표시
 
 ## v0.4 성능 지표 계산
-- [ ] 실시간 WPM(5자/단어), 정확도(%) 계산
-- [ ] 점수 계산: `score = round(max(0, WPM) * (accuracy/100)**2 * 100)`
-- [ ] 결과 화면: WPM/Accuracy/Score 표시
+- [x] 실시간 WPM(5자/단어), 정확도(%) 계산
+- [x] 점수 계산: `score = round(max(0, WPM) * (accuracy/100)**2 * 100)`
+- [x] 결과 화면: WPM/Accuracy/Score 표시
 
 ## v0.5 Supabase 연동(저장)
-- [ ] `POST /api/records` 라우트
-- [ ] 본문: `student_id`, `mode`, `wpm`, `accuracy`, `score`, `duration_sec`
-- [ ] **유효성 검증(백엔드)**: 정규식 `^\d{5}\s[가-힣]{2,4}$`
-- [ ] **시간 검증**: `duration_sec >= 300` 인 경우만 저장
-- [ ] 프런트 입력창 placeholder: `"학번 이름 (예: 10218 홍길동)"`
+- [x] `POST /api/records` 라우트
+- [x] 본문: `student_id`, `mode`, `wpm`, `accuracy`, `score`, `duration_sec`
+- [x] **유효성 검증(백엔드)**: 정규식 `^\d{5}\s[가-힣]{2,4}$`
+- [x] **시간 검증**: `duration_sec >= 300` 인 경우만 저장
+- [x] 프런트 입력창 placeholder: `"학번 이름 (예: 10218 홍길동)"`
 
 ## v0.6 대시보드 Top10
-- [ ] `GET /api/records/top?mode=…`
-- [ ] 정렬: score desc → accuracy desc → wpm desc → created_at asc
+- [x] `GET /api/records/top?mode=…`
+- [x] 정렬: score desc → accuracy desc → wpm desc → created_at asc
 - [ ] Top10 렌더링, 모드 탭 4개
 
 ## v0.7 더 보기(페이지네이션)
