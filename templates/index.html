@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ko" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>파이썬 타자연습</title>
+    <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/custom.css') }}" rel="stylesheet">
+</head>
+<body>
+    <!-- 상단 네비게이션 -->
+    <nav class="navbar navbar-expand-lg">
+        <div class="container">
+            <span class="navbar-brand mb-0 h1">
+                <i class="bi bi-code-slash"></i>
+                파이썬 타자연습
+            </span>
+            <button class="btn btn-outline-secondary" type="button" id="teacherLoginBtn">
+                <i class="bi bi-person-gear"></i>
+                교사 로그인
+            </button>
+        </div>
+    </nav>
+
+    <!-- 메인 컨텐츠 -->
+    <div class="container mt-4">
+        <!-- 헤더 섹션 -->
+        <div class="text-center mb-5">
+            <h1 class="display-4 mb-3">파이썬 타자연습</h1>
+            <p class="lead text-muted">
+                파이썬 프로그래밍의 기초가 되는 타자실력을 향상시켜보세요!<br>
+                각 모드는 5분간 진행되며, 속도와 정확도를 측정합니다.
+            </p>
+        </div>
+
+        <!-- 연습 모드 선택 카드 -->
+        <div class="row g-4">
+            {% for mode_key, mode_data in modes.items() %}
+            <div class="col-md-6 col-lg-3">
+                <div class="card h-100 mode-card" data-mode="{{ mode_key }}">
+                    <div class="card-body text-center">
+                        <div class="mode-icon mb-3">
+                            {{ mode_data.icon }}
+                        </div>
+                        <h5 class="card-title">{{ mode_data.title }}</h5>
+                        <p class="card-text text-muted">
+                            {{ mode_data.description }}
+                        </p>
+                        <a href="{{ url_for('practice', mode=mode_key) }}" 
+                           class="btn btn-{{ mode_data.color }} btn-lg w-100">
+                            <i class="bi bi-play-fill"></i>
+                            시작하기
+                        </a>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- 랭킹 프리뷰 섹션 -->
+        <div class="mt-5">
+            <div class="row">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">
+                                <i class="bi bi-trophy"></i>
+                                명예의 전당
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted text-center">
+                                연습을 완료하면 여기에 순위가 표시됩니다!
+                            </p>
+                            <div class="text-center">
+                                <button class="btn btn-outline-secondary" disabled>
+                                    <i class="bi bi-bar-chart"></i>
+                                    순위 보기 (준비 중)
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 푸터 -->
+    <footer class="mt-5 py-4 border-top">
+        <div class="container text-center text-muted">
+            <p>&copy; 2025 파이썬 타자연습. 중학교 1학년 정보 교과를 위한 학습 도구입니다.</p>
+        </div>
+    </footer>
+
+    <!-- 교사 로그인 모달 (향후 구현) -->
+    <div class="modal fade" id="teacherLoginModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">교사 로그인</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted text-center">교사 관리자 기능은 향후 버전에서 제공됩니다.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
