@@ -85,7 +85,7 @@ class Record(db.Model):
 PRACTICE_MODES = {
     '자리': {
         'title': '자리 연습',
-        'description': '키보드 자리와 파이썬 기호에 익숙해지세요',
+        'description': '키보드 자리와 파이썬 기호 익히기',
         'icon': '⌨️',
         'color': 'primary'
     },
