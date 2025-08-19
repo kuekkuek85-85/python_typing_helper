@@ -236,12 +236,7 @@ function loadPracticeText() {
                 // UI 점수 표시도 초기화
                 if (elements.score) elements.score.textContent = '0';
                 
-                console.log('새 텍스트 로드 완료 - 점수 변수 초기화:', {
-                    accumulatedScore: accumulatedScore,
-                    lastScoredWordIndex: lastScoredWordIndex,
-                    completedWords: completedWords.length,
-                    newText: currentText
-                });
+
                 
                 renderPracticeText();
             } else {
@@ -260,7 +255,7 @@ function renderPracticeText() {
     if (window.currentMode === '자리') {
         // 모든 줄바꿈 제거하고 연속된 공백을 하나로 정리
         currentText = currentText.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
-        console.log('자리 연습 텍스트 한 줄 처리:', currentText);
+
     }
     
     // 텍스트를 스팬으로 분할하여 하이라이트 가능하게 만들기
@@ -296,11 +291,7 @@ function startPractice() {
     completedWords = [];
     lastScoredWordIndex = -1;
     
-    console.log('연습 시작 - 모든 변수 초기화 완료:', {
-        accumulatedScore: accumulatedScore,
-        lastScoredWordIndex: lastScoredWordIndex,
-        currentText: currentText
-    });
+
     
     // UI 상태 변경
     elements.startBtn.disabled = true;
@@ -441,16 +432,7 @@ function calculateProgressScore() {
     // 텍스트를 단어 단위로 분할 (공백 기준) 및 빈 문자열 제거
     const words = currentText.split(' ').filter(word => word.trim() !== '');
     
-    // 디버깅 로그 (첫 번째 단어 체크시에만)
-    if (words.length > 0 && lastScoredWordIndex === -1) {
-        console.log('점수 계산 시작:', {
-            currentText: currentText,
-            userTypedText: userTypedText,
-            words: words,
-            lastScoredWordIndex: lastScoredWordIndex,
-            accumulatedScore: accumulatedScore
-        });
-    }
+
     
     for (let wordIndex = 0; wordIndex < words.length; wordIndex++) {
         const word = words[wordIndex];
@@ -502,21 +484,6 @@ function calculateProgressScore() {
             
             lastScoredWordIndex = wordIndex;
             console.log(`단어 "${word}" 완료! 점수: ${wordScore}, 총 누적: ${accumulatedScore}`);
-        } else {
-            // 디버깅: 단어 완료되지 않은 경우의 상세 정보
-            if (wordIndex === lastScoredWordIndex + 1) {
-                console.log(`단어 "${word}" 미완료 상세:`, {
-                    wordIndex: wordIndex,
-                    wordStartIndex: wordStartIndex,
-                    wordEndIndex: wordEndIndex,
-                    isLastWord: isLastWord,
-                    userTypedLength: userTypedText.length,
-                    requiredLength: isLastWord ? wordEndIndex : wordEndIndex + 1,
-                    actualTyped: userTypedText.substring(wordStartIndex, wordEndIndex),
-                    expectedWord: word,
-                    nextChar: isLastWord ? 'N/A' : userTypedText[wordEndIndex]
-                });
-            }
         }
     }
 }
