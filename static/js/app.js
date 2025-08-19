@@ -430,6 +430,7 @@ function checkLineCompletion() {
             if (isComplete) {
                 // 이 줄의 점수 계산
                 const lineScore = calculateLineScore(line, typedLineText);
+                const previousScore = accumulatedScore;
                 accumulatedScore += lineScore;
                 
                 // 완료된 줄 정보 저장
@@ -440,8 +441,13 @@ function checkLineCompletion() {
                     completedAt: Date.now()
                 });
                 
-                console.log(`줄 ${lineNum + 1} 완료! 점수: ${lineScore}, 누적 점수: ${accumulatedScore}`);
-                console.log(`디버그 - 줄 텍스트: "${line}", 타이핑: "${typedLineText}", 줄바꿈 필요: ${includeNewline}`);
+                console.log(`줄 ${lineNum + 1} 완료! 이전 누적: ${previousScore}, 줄 점수: ${lineScore}, 새 누적: ${accumulatedScore}`);
+                console.log(`완료된 줄 수: ${completedLines.length}, 텍스트 길이: ${line.length}`);
+                
+                // UI 즉시 업데이트
+                if (elements.score) {
+                    elements.score.textContent = accumulatedScore;
+                }
             }
         }
         
