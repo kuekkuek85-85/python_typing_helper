@@ -502,6 +502,21 @@ function calculateProgressScore() {
             
             lastScoredWordIndex = wordIndex;
             console.log(`단어 "${word}" 완료! 점수: ${wordScore}, 총 누적: ${accumulatedScore}`);
+        } else {
+            // 디버깅: 단어 완료되지 않은 경우의 상세 정보
+            if (wordIndex === lastScoredWordIndex + 1) {
+                console.log(`단어 "${word}" 미완료 상세:`, {
+                    wordIndex: wordIndex,
+                    wordStartIndex: wordStartIndex,
+                    wordEndIndex: wordEndIndex,
+                    isLastWord: isLastWord,
+                    userTypedLength: userTypedText.length,
+                    requiredLength: isLastWord ? wordEndIndex : wordEndIndex + 1,
+                    actualTyped: userTypedText.substring(wordStartIndex, wordEndIndex),
+                    expectedWord: word,
+                    nextChar: isLastWord ? 'N/A' : userTypedText[wordEndIndex]
+                });
+            }
         }
     }
 }
