@@ -27,6 +27,8 @@
     border-radius: 0.375rem;
     padding: 1rem;
     margin-bottom: 1rem;
+    width: 100%;
+    overflow-x: auto;
 }
 
 /* 연습 텍스트 스타일 */
@@ -35,14 +37,14 @@
     font-size: 1.2rem;
     line-height: 1.6;
     letter-spacing: 0.5px;
-    white-space: nowrap;
-    overflow-x: auto;
-    overflow-y: hidden;
+    white-space: nowrap !important;
+    overflow: visible;
     min-height: 40px;
-    max-height: 60px;
+    height: 40px;
     color: var(--bs-body-color);
     padding: 0.5rem;
-    scrollbar-width: thin;
+    display: inline-block;
+    width: auto;
 }
 
 /* 텍스트 하이라이트 스타일 */
