@@ -221,7 +221,12 @@ function loadPracticeText() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                currentText = data.text;
+                // 자리 연습의 경우 줄바꿈 문자 제거
+                if (window.currentMode === '자리') {
+                    currentText = data.text.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+                } else {
+                    currentText = data.text;
+                }
                 renderPracticeText();
             } else {
                 elements.practiceText.textContent = '연습 텍스트를 불러올 수 없습니다.';
