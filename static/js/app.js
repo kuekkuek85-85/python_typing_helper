@@ -422,61 +422,60 @@ function getCorrectCharCount() {
 function calculateProgressScore() {
     if (!currentText || !userTypedText) return;
     
-    // 텍스트를 단어 단위로 분할 (공백 기준)
-    const words = currentText.split(' ');
-    let textIndex = 0;
+    // 텍스트를 단어 단위로 분할 (공백 기준) 및 빈 문자열 제거
+    const words = currentText.split(' ').filter(word => word.trim() !== '');
     
     for (let wordIndex = 0; wordIndex < words.length; wordIndex++) {
         const word = words[wordIndex];
         
-        // 이미 점수를 받은 단어인지 확인
-        if (wordIndex <= lastScoredWordIndex) {
-            textIndex += word.length;
-            if (wordIndex < words.length - 1) textIndex += 1; // 마지막 단어가 아닌 경우만 공백 추가
-            continue;
-        }
+        // 이미 점수를 받은 단어는 건너뛰기
+        if (wordIndex <= lastScoredWordIndex) continue;
         
-        // 현재 단어의 시작과 끝 위치 계산
-        const wordStartIndex = textIndex;
-        const wordEndIndex = textIndex + word.length;
-        
-        // 마지막 단어인지 확인
-        const isLastWord = wordIndex === words.length - 1;
-        const requiredLength = isLastWord ? wordEndIndex : wordEndIndex + 1;
-        
-        // 현재 단어가 완전히 타이핑되었는지 확인
-        if (userTypedText.length >= requiredLength) {
-            const typedWord = userTypedText.substring(wordStartIndex, wordEndIndex);
-            
-            // 단어가 정확히 타이핑되었는지 확인
-            if (typedWord === word) {
-                // 공백도 정확한지 확인 (마지막 단어가 아닌 경우)
-                let spaceCorrect = true;
-                if (!isLastWord && userTypedText.length > wordEndIndex) {
-                    spaceCorrect = userTypedText[wordEndIndex] === ' ';
-                }
-                
-                if (spaceCorrect) {
-                    // 단어별 점수 계산
-                    const wordScore = calculateWordScore(word, typedWord);
-                    accumulatedScore += wordScore;
-                    
-                    // 완료된 단어 정보 저장
-                    completedWords.push({
-                        wordIndex: wordIndex,
-                        word: word,
-                        score: wordScore,
-                        completedAt: Date.now()
-                    });
-                    
-                    lastScoredWordIndex = wordIndex;
-                    console.log(`단어 "${word}" 완료! 점수: ${wordScore}, 총 누적: ${accumulatedScore}`);
-                }
+        // 현재 단어의 위치를 텍스트에서 찾기
+        let searchStartIndex = 0;
+        for (let i = 0; i < wordIndex; i++) {
+            const prevWordIndex = currentText.indexOf(words[i], searchStartIndex);
+            if (prevWordIndex !== -1) {
+                searchStartIndex = prevWordIndex + words[i].length + 1; // +1 for space
             }
         }
         
-        textIndex += word.length;
-        if (wordIndex < words.length - 1) textIndex += 1; // 마지막 단어가 아닌 경우만 공백 추가
+        const wordStartIndex = currentText.indexOf(word, searchStartIndex);
+        if (wordStartIndex === -1) continue; // 단어를 찾을 수 없으면 건너뛰기
+        
+        const wordEndIndex = wordStartIndex + word.length;
+        const isLastWord = wordIndex === words.length - 1;
+        
+        // 단어 완료 조건 확인
+        let wordComplete = false;
+        
+        if (isLastWord) {
+            // 마지막 단어: 정확히 타이핑되면 완료
+            wordComplete = (userTypedText.length >= wordEndIndex && 
+                           userTypedText.substring(wordStartIndex, wordEndIndex) === word);
+        } else {
+            // 마지막 단어가 아님: 단어 + 공백까지 타이핑되면 완료
+            wordComplete = (userTypedText.length > wordEndIndex && 
+                           userTypedText.substring(wordStartIndex, wordEndIndex) === word &&
+                           userTypedText[wordEndIndex] === ' ');
+        }
+        
+        if (wordComplete) {
+            // 단어별 점수 계산
+            const wordScore = calculateWordScore(word, word);
+            accumulatedScore += wordScore;
+            
+            // 완료된 단어 정보 저장
+            completedWords.push({
+                wordIndex: wordIndex,
+                word: word,
+                score: wordScore,
+                completedAt: Date.now()
+            });
+            
+            lastScoredWordIndex = wordIndex;
+            console.log(`단어 "${word}" 완료! 점수: ${wordScore}, 총 누적: ${accumulatedScore}`);
+        }
     }
 }
 
