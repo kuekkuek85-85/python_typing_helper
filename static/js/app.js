@@ -233,6 +233,16 @@ function loadPracticeText() {
                 completedWords = [];
                 lastScoredWordIndex = -1;
                 
+                // UI 점수 표시도 초기화
+                if (elements.score) elements.score.textContent = '0';
+                
+                console.log('새 텍스트 로드 완료 - 점수 변수 초기화:', {
+                    accumulatedScore: accumulatedScore,
+                    lastScoredWordIndex: lastScoredWordIndex,
+                    completedWords: completedWords.length,
+                    newText: currentText
+                });
+                
                 renderPracticeText();
             } else {
                 elements.practiceText.textContent = '연습 텍스트를 불러올 수 없습니다.';
@@ -281,10 +291,16 @@ function startPractice() {
     userTypedText = '';
     lastTypedLength = 0;
     
-    // 진행률 기반 점수 누적 변수 초기화
+    // 진행률 기반 점수 누적 변수 강제 초기화
     accumulatedScore = 0;
     completedWords = [];
     lastScoredWordIndex = -1;
+    
+    console.log('연습 시작 - 모든 변수 초기화 완료:', {
+        accumulatedScore: accumulatedScore,
+        lastScoredWordIndex: lastScoredWordIndex,
+        currentText: currentText
+    });
     
     // UI 상태 변경
     elements.startBtn.disabled = true;
@@ -424,6 +440,17 @@ function calculateProgressScore() {
     
     // 텍스트를 단어 단위로 분할 (공백 기준) 및 빈 문자열 제거
     const words = currentText.split(' ').filter(word => word.trim() !== '');
+    
+    // 디버깅 로그 (첫 번째 단어 체크시에만)
+    if (words.length > 0 && lastScoredWordIndex === -1) {
+        console.log('점수 계산 시작:', {
+            currentText: currentText,
+            userTypedText: userTypedText,
+            words: words,
+            lastScoredWordIndex: lastScoredWordIndex,
+            accumulatedScore: accumulatedScore
+        });
+    }
     
     for (let wordIndex = 0; wordIndex < words.length; wordIndex++) {
         const word = words[wordIndex];
