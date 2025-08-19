@@ -286,14 +286,23 @@ for num in numbers:
     }
     
     if mode == '자리':
-        # 자리 연습의 경우 랜덤하게 섞인 텍스트 생성
+        # 자리 연습의 경우 랜덤하게 섞인 텍스트를 여러 줄로 생성
         all_items = keyboard_chars + python_keywords + python_functions + symbols
         random.shuffle(all_items)
         
-        # 15-20개 항목을 선택해서 하나의 연습 텍스트로 만들기
-        num_items = random.randint(15, 20)
-        selected_items = all_items[:num_items]
-        selected_text = ' '.join(selected_items)
+        # 3-4줄의 연습 텍스트 생성
+        lines = []
+        items_per_line = random.randint(8, 12)
+        total_lines = random.randint(3, 4)
+        
+        for line_num in range(total_lines):
+            start_idx = line_num * items_per_line
+            end_idx = min(start_idx + items_per_line, len(all_items))
+            if start_idx < len(all_items):
+                line_items = all_items[start_idx:end_idx]
+                lines.append(' '.join(line_items))
+        
+        selected_text = '\n'.join(lines)
     else:
         texts = practice_texts.get(mode, [])
         if not texts:
