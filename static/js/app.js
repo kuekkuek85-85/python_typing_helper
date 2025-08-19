@@ -403,39 +403,53 @@ function calculateProgressScore() {
     
     for (let wordIndex = 0; wordIndex < words.length; wordIndex++) {
         const word = words[wordIndex];
-        const wordStartIndex = textIndex;
-        const wordEndIndex = textIndex + word.length;
         
         // 이미 점수를 받은 단어인지 확인
         if (wordIndex <= lastScoredWordIndex) {
-            textIndex = wordEndIndex + 1; // +1 for space
+            textIndex += word.length + 1; // +1 for space
             continue;
         }
         
+        // 현재 단어의 시작과 끝 위치 계산
+        const wordStartIndex = textIndex;
+        const wordEndIndex = textIndex + word.length;
+        
+        // 단어 뒤에 공백이 있는지 확인 (마지막 단어가 아닌 경우)
+        const hasSpaceAfter = wordIndex < words.length - 1;
+        const requiredLength = hasSpaceAfter ? wordEndIndex + 1 : wordEndIndex;
+        
         // 현재 단어가 완전히 타이핑되었는지 확인
-        if (userTypedText.length >= wordEndIndex) {
+        if (userTypedText.length >= requiredLength) {
             const typedWord = userTypedText.substring(wordStartIndex, wordEndIndex);
             
             // 단어가 정확히 타이핑되었는지 확인
             if (typedWord === word) {
-                // 단어별 점수 계산
-                const wordScore = calculateWordScore(word, typedWord);
-                accumulatedScore += wordScore;
+                // 공백도 정확한지 확인 (마지막 단어가 아닌 경우)
+                let spaceCorrect = true;
+                if (hasSpaceAfter && userTypedText.length > wordEndIndex) {
+                    spaceCorrect = userTypedText[wordEndIndex] === ' ';
+                }
                 
-                // 완료된 단어 정보 저장
-                completedWords.push({
-                    wordIndex: wordIndex,
-                    word: word,
-                    score: wordScore,
-                    completedAt: Date.now()
-                });
-                
-                lastScoredWordIndex = wordIndex;
-                console.log(`단어 "${word}" 완료! 점수: ${wordScore}, 총 누적: ${accumulatedScore}`);
+                if (spaceCorrect) {
+                    // 단어별 점수 계산
+                    const wordScore = calculateWordScore(word, typedWord);
+                    accumulatedScore += wordScore;
+                    
+                    // 완료된 단어 정보 저장
+                    completedWords.push({
+                        wordIndex: wordIndex,
+                        word: word,
+                        score: wordScore,
+                        completedAt: Date.now()
+                    });
+                    
+                    lastScoredWordIndex = wordIndex;
+                    console.log(`단어 "${word}" 완료! 점수: ${wordScore}, 총 누적: ${accumulatedScore}`);
+                }
             }
         }
         
-        textIndex = wordEndIndex + 1; // +1 for space
+        textIndex += word.length + 1; // +1 for space
     }
 }
 
@@ -470,16 +484,23 @@ function calculateFinalPartialScore() {
     let textIndex = 0;
     
     // 마지막으로 타이핑 중인 단어 찾기
-    for (let wordIndex = lastScoredWordIndex + 1; wordIndex < words.length; wordIndex++) {
+    for (let wordIndex = 0; wordIndex < words.length; wordIndex++) {
         const word = words[wordIndex];
-        const wordStartIndex = textIndex + (wordIndex > 0 ? (lastScoredWordIndex + 1) * 1 : 0); // 앞선 완료 단어들과 공백 고려
-        const wordEndIndex = wordStartIndex + word.length;
+        
+        // 이미 점수를 받은 단어는 건너뛰기
+        if (wordIndex <= lastScoredWordIndex) {
+            textIndex += word.length + 1;
+            continue;
+        }
+        
+        const wordStartIndex = textIndex;
+        const wordEndIndex = textIndex + word.length;
         
         // 현재 타이핑 중인 단어가 있는지 확인
         if (userTypedText.length > wordStartIndex && userTypedText.length <= wordEndIndex) {
             const partialTypedWord = userTypedText.substring(wordStartIndex);
             
-            // 부분 점수 계산 (50% 적용)
+            // 부분 점수 계산
             let correctChars = 0;
             for (let i = 0; i < Math.min(word.length, partialTypedWord.length); i++) {
                 if (word[i] === partialTypedWord[i]) {
@@ -495,7 +516,7 @@ function calculateFinalPartialScore() {
             break;
         }
         
-        textIndex = wordEndIndex + 1;
+        textIndex += word.length + 1;
     }
 }
 
