@@ -400,7 +400,7 @@ function checkLineCompletion() {
     const lines = currentText.split('\n');
     let textIndex = 0;
     
-    console.log(`체크 시작 - 총 줄 수: ${lines.length}, 타이핑 길이: ${userTypedText.length}`);
+
     
     for (let lineNum = 0; lineNum < lines.length; lineNum++) {
         const line = lines[lineNum];
@@ -420,30 +420,20 @@ function checkLineCompletion() {
         const includeNewline = lineNum < lines.length - 1;
         const checkEndIndex = includeNewline ? lineEndIndex + 1 : lineEndIndex;
         
-        console.log(`줄 ${lineNum + 1}: 시작=${lineStartIndex}, 끝=${lineEndIndex}, 체크끝=${checkEndIndex}, 줄바꿈필요=${includeNewline}`);
-        console.log(`줄 내용: "${line}"`);
-        
         // 해당 줄까지 타이핑이 완료되었는지 확인
         if (userTypedText.length >= checkEndIndex) {
             // 타이핑된 텍스트에서 해당 줄 부분 추출
             const typedLineText = userTypedText.substring(lineStartIndex, lineEndIndex);
             
-            console.log(`타이핑된 줄: "${typedLineText}"`);
-            
             // 줄바꿈이 필요한 경우 줄바꿈도 확인
             let isComplete = (typedLineText === line);
             if (includeNewline && isComplete) {
-                const hasNewline = userTypedText[lineEndIndex] === '\n';
-                console.log(`줄바꿈 확인: 위치=${lineEndIndex}, 문자="${userTypedText[lineEndIndex]}", 맞음=${hasNewline}`);
-                isComplete = hasNewline;
+                isComplete = userTypedText[lineEndIndex] === '\n';
             }
-            
-            console.log(`줄 ${lineNum + 1} 완료 상태: ${isComplete}`);
             
             if (isComplete) {
                 // 이 줄의 점수 계산
                 const lineScore = calculateLineScore(line, typedLineText);
-                const previousScore = accumulatedScore;
                 accumulatedScore += lineScore;
                 
                 // 완료된 줄 정보 저장
@@ -454,15 +444,8 @@ function checkLineCompletion() {
                     completedAt: Date.now()
                 });
                 
-                console.log(`줄 ${lineNum + 1} 완료! 이전 누적: ${previousScore}, 줄 점수: ${lineScore}, 새 누적: ${accumulatedScore}`);
-                
-                // UI 즉시 업데이트
-                if (elements.score) {
-                    elements.score.textContent = accumulatedScore;
-                }
+                console.log(`줄 ${lineNum + 1} 완료! 점수: ${lineScore}, 총 누적: ${accumulatedScore}`);
             }
-        } else {
-            console.log(`줄 ${lineNum + 1} 아직 미완료: 타이핑 길이=${userTypedText.length}, 필요 길이=${checkEndIndex}`);
         }
         
         textIndex += line.length + 1; // +1 for \n (even for last line, for consistency)
