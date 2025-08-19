@@ -34,17 +34,19 @@
 /* 연습 텍스트 스타일 */
 .practice-text {
     font-family: 'Courier New', monospace;
-    font-size: 1.2rem;
-    line-height: 1.6;
-    letter-spacing: 0.5px;
+    font-size: 1.1rem;
+    line-height: 1.4;
+    letter-spacing: 0.3px;
     white-space: nowrap !important;
     overflow: visible;
-    min-height: 40px;
-    height: 40px;
+    min-height: 35px;
+    height: 35px;
     color: var(--bs-body-color);
-    padding: 0.5rem;
-    display: inline-block;
-    width: auto;
+    padding: 0.3rem;
+    display: block;
+    width: max-content;
+    word-break: keep-all;
+    word-wrap: normal;
 }
 
 /* 텍스트 하이라이트 스타일 */
