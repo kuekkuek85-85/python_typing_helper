@@ -406,12 +406,19 @@ function calculateProgressScore() {
     const words = currentText.split(' ');
     let textIndex = 0;
     
+    // 디버깅용 로그
+    console.log(`현재 텍스트: "${currentText}"`);
+    console.log(`타이핑된 텍스트: "${userTypedText}"`);
+    console.log(`단어 목록:`, words);
+    console.log(`마지막 점수받은 단어 인덱스: ${lastScoredWordIndex}`);
+    
     for (let wordIndex = 0; wordIndex < words.length; wordIndex++) {
         const word = words[wordIndex];
         
         // 이미 점수를 받은 단어인지 확인
         if (wordIndex <= lastScoredWordIndex) {
-            textIndex += word.length + 1; // +1 for space
+            textIndex += word.length;
+            if (wordIndex < words.length - 1) textIndex += 1; // 마지막 단어가 아닌 경우만 공백 추가
             continue;
         }
         
@@ -419,20 +426,24 @@ function calculateProgressScore() {
         const wordStartIndex = textIndex;
         const wordEndIndex = textIndex + word.length;
         
-        // 단어 뒤에 공백이 있는지 확인 (마지막 단어가 아닌 경우)
-        const hasSpaceAfter = wordIndex < words.length - 1;
-        const requiredLength = hasSpaceAfter ? wordEndIndex + 1 : wordEndIndex;
+        console.log(`단어 "${word}" (인덱스 ${wordIndex}): 시작=${wordStartIndex}, 끝=${wordEndIndex}, 타이핑길이=${userTypedText.length}`);
+        
+        // 마지막 단어인지 확인
+        const isLastWord = wordIndex === words.length - 1;
+        const requiredLength = isLastWord ? wordEndIndex : wordEndIndex + 1;
         
         // 현재 단어가 완전히 타이핑되었는지 확인
         if (userTypedText.length >= requiredLength) {
             const typedWord = userTypedText.substring(wordStartIndex, wordEndIndex);
+            console.log(`단어 "${word}" 검사: 타이핑="${typedWord}", 필요길이=${requiredLength}, 마지막단어=${isLastWord}`);
             
             // 단어가 정확히 타이핑되었는지 확인
             if (typedWord === word) {
                 // 공백도 정확한지 확인 (마지막 단어가 아닌 경우)
                 let spaceCorrect = true;
-                if (hasSpaceAfter && userTypedText.length > wordEndIndex) {
+                if (!isLastWord && userTypedText.length > wordEndIndex) {
                     spaceCorrect = userTypedText[wordEndIndex] === ' ';
+                    console.log(`공백 검사: "${userTypedText[wordEndIndex]}" === " " = ${spaceCorrect}`);
                 }
                 
                 if (spaceCorrect) {
@@ -454,7 +465,8 @@ function calculateProgressScore() {
             }
         }
         
-        textIndex += word.length + 1; // +1 for space
+        textIndex += word.length;
+        if (wordIndex < words.length - 1) textIndex += 1; // 마지막 단어가 아닌 경우만 공백 추가
     }
 }
 
