@@ -396,36 +396,38 @@ function getCorrectCharCount() {
 // 줄 완료 체크 및 점수 누적 함수
 function checkLineCompletion() {
     const lines = currentText.split('\n');
-    let currentIndex = 0;
+    let textIndex = 0;
     
     for (let lineNum = 0; lineNum < lines.length; lineNum++) {
         const line = lines[lineNum];
-        const lineEndIndex = currentIndex + line.length;
-        const nextLineStartIndex = lineEndIndex + 1; // +1 for \n
         
         // 이미 완료된 줄인지 확인
         const alreadyCompleted = completedLines.some(completed => completed.lineNum === lineNum);
+        if (alreadyCompleted) {
+            textIndex += line.length + 1; // +1 for \n
+            continue;
+        }
         
-        // 현재 줄이 완료되었는지 확인
-        if (!alreadyCompleted) {
-            let isLineComplete = false;
-            let typedLineText = '';
+        // 현재 줄의 시작과 끝 인덱스 계산
+        const lineStartIndex = textIndex;
+        const lineEndIndex = textIndex + line.length;
+        
+        // 마지막 줄이 아닌 경우, 줄바꿈 문자까지 포함해서 체크
+        const includeNewline = lineNum < lines.length - 1;
+        const checkEndIndex = includeNewline ? lineEndIndex + 1 : lineEndIndex;
+        
+        // 해당 줄까지 타이핑이 완료되었는지 확인
+        if (userTypedText.length >= checkEndIndex) {
+            // 타이핑된 텍스트에서 해당 줄 부분 추출
+            const typedLineText = userTypedText.substring(lineStartIndex, lineEndIndex);
             
-            if (lineNum === lines.length - 1) {
-                // 마지막 줄인 경우 - 줄바꿈 없이 완료 확인
-                if (userTypedText.length >= lineEndIndex) {
-                    typedLineText = userTypedText.substring(currentIndex, lineEndIndex);
-                    isLineComplete = (typedLineText === line);
-                }
-            } else {
-                // 중간 줄인 경우 - 줄바꿈 포함하여 완료 확인
-                if (userTypedText.length >= nextLineStartIndex && userTypedText[lineEndIndex] === '\n') {
-                    typedLineText = userTypedText.substring(currentIndex, lineEndIndex);
-                    isLineComplete = (typedLineText === line);
-                }
+            // 줄바꿈이 필요한 경우 줄바꿈도 확인
+            let isComplete = (typedLineText === line);
+            if (includeNewline && isComplete) {
+                isComplete = userTypedText[lineEndIndex] === '\n';
             }
             
-            if (isLineComplete) {
+            if (isComplete) {
                 // 이 줄의 점수 계산
                 const lineScore = calculateLineScore(line, typedLineText);
                 accumulatedScore += lineScore;
@@ -439,10 +441,11 @@ function checkLineCompletion() {
                 });
                 
                 console.log(`줄 ${lineNum + 1} 완료! 점수: ${lineScore}, 누적 점수: ${accumulatedScore}`);
+                console.log(`디버그 - 줄 텍스트: "${line}", 타이핑: "${typedLineText}", 줄바꿈 필요: ${includeNewline}`);
             }
         }
         
-        currentIndex = nextLineStartIndex;
+        textIndex += line.length + 1; // +1 for \n (even for last line, for consistency)
     }
 }
 
