@@ -246,6 +246,13 @@ function loadPracticeText() {
 }
 
 function renderPracticeText() {
+    // 자리 연습의 경우 한 줄로 강제 처리
+    if (window.currentMode === '자리') {
+        // 모든 줄바꿈 제거하고 연속된 공백을 하나로 정리
+        currentText = currentText.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+        console.log('자리 연습 텍스트 한 줄 처리:', currentText);
+    }
+    
     // 텍스트를 스팬으로 분할하여 하이라이트 가능하게 만들기
     elements.practiceText.innerHTML = '';
     for (let i = 0; i < currentText.length; i++) {
@@ -253,6 +260,13 @@ function renderPracticeText() {
         span.textContent = currentText[i];
         span.setAttribute('data-index', i);
         elements.practiceText.appendChild(span);
+    }
+    
+    // 자리 연습의 경우 추가 스타일 적용
+    if (window.currentMode === '자리') {
+        elements.practiceText.style.whiteSpace = 'nowrap';
+        elements.practiceText.style.display = 'inline-block';
+        elements.practiceText.style.width = 'max-content';
     }
     
     // 첫 번째 키 강조
