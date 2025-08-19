@@ -227,6 +227,12 @@ function loadPracticeText() {
                 } else {
                     currentText = data.text;
                 }
+                
+                // 새로운 텍스트가 로드될 때 점수 변수 초기화
+                accumulatedScore = 0;
+                completedWords = [];
+                lastScoredWordIndex = -1;
+                
                 renderPracticeText();
             } else {
                 elements.practiceText.textContent = '연습 텍스트를 불러올 수 없습니다.';
@@ -406,12 +412,6 @@ function calculateProgressScore() {
     const words = currentText.split(' ');
     let textIndex = 0;
     
-    // 디버깅용 로그
-    console.log(`현재 텍스트: "${currentText}"`);
-    console.log(`타이핑된 텍스트: "${userTypedText}"`);
-    console.log(`단어 목록:`, words);
-    console.log(`마지막 점수받은 단어 인덱스: ${lastScoredWordIndex}`);
-    
     for (let wordIndex = 0; wordIndex < words.length; wordIndex++) {
         const word = words[wordIndex];
         
@@ -426,8 +426,6 @@ function calculateProgressScore() {
         const wordStartIndex = textIndex;
         const wordEndIndex = textIndex + word.length;
         
-        console.log(`단어 "${word}" (인덱스 ${wordIndex}): 시작=${wordStartIndex}, 끝=${wordEndIndex}, 타이핑길이=${userTypedText.length}`);
-        
         // 마지막 단어인지 확인
         const isLastWord = wordIndex === words.length - 1;
         const requiredLength = isLastWord ? wordEndIndex : wordEndIndex + 1;
@@ -435,7 +433,6 @@ function calculateProgressScore() {
         // 현재 단어가 완전히 타이핑되었는지 확인
         if (userTypedText.length >= requiredLength) {
             const typedWord = userTypedText.substring(wordStartIndex, wordEndIndex);
-            console.log(`단어 "${word}" 검사: 타이핑="${typedWord}", 필요길이=${requiredLength}, 마지막단어=${isLastWord}`);
             
             // 단어가 정확히 타이핑되었는지 확인
             if (typedWord === word) {
@@ -443,7 +440,6 @@ function calculateProgressScore() {
                 let spaceCorrect = true;
                 if (!isLastWord && userTypedText.length > wordEndIndex) {
                     spaceCorrect = userTypedText[wordEndIndex] === ' ';
-                    console.log(`공백 검사: "${userTypedText[wordEndIndex]}" === " " = ${spaceCorrect}`);
                 }
                 
                 if (spaceCorrect) {
