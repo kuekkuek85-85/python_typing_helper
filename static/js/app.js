@@ -400,20 +400,34 @@ function checkLineCompletion() {
     
     for (let lineNum = 0; lineNum < lines.length; lineNum++) {
         const line = lines[lineNum];
-        const lineEndIndex = currentIndex + line.length + (lineNum < lines.length - 1 ? 1 : 0); // +1 for \n except last line
+        const lineEndIndex = currentIndex + line.length;
+        const nextLineStartIndex = lineEndIndex + 1; // +1 for \n
         
         // 이미 완료된 줄인지 확인
         const alreadyCompleted = completedLines.some(completed => completed.lineNum === lineNum);
         
-        // 현재 줄이 완료되었는지 확인 (줄바꿈 포함하여 완전히 타이핑됨)
-        if (!alreadyCompleted && userTypedText.length >= lineEndIndex) {
-            const lineText = userTypedText.substring(currentIndex, Math.min(lineEndIndex, userTypedText.length));
-            const expectedLineText = line + (lineNum < lines.length - 1 ? '\n' : '');
+        // 현재 줄이 완료되었는지 확인
+        if (!alreadyCompleted) {
+            let isLineComplete = false;
+            let typedLineText = '';
             
-            // 줄이 완료되었는지 확인
-            if (lineText === expectedLineText) {
+            if (lineNum === lines.length - 1) {
+                // 마지막 줄인 경우 - 줄바꿈 없이 완료 확인
+                if (userTypedText.length >= lineEndIndex) {
+                    typedLineText = userTypedText.substring(currentIndex, lineEndIndex);
+                    isLineComplete = (typedLineText === line);
+                }
+            } else {
+                // 중간 줄인 경우 - 줄바꿈 포함하여 완료 확인
+                if (userTypedText.length >= nextLineStartIndex && userTypedText[lineEndIndex] === '\n') {
+                    typedLineText = userTypedText.substring(currentIndex, lineEndIndex);
+                    isLineComplete = (typedLineText === line);
+                }
+            }
+            
+            if (isLineComplete) {
                 // 이 줄의 점수 계산
-                const lineScore = calculateLineScore(line, lineText.replace('\n', ''));
+                const lineScore = calculateLineScore(line, typedLineText);
                 accumulatedScore += lineScore;
                 
                 // 완료된 줄 정보 저장
@@ -428,7 +442,7 @@ function checkLineCompletion() {
             }
         }
         
-        currentIndex = lineEndIndex;
+        currentIndex = nextLineStartIndex;
     }
 }
 
