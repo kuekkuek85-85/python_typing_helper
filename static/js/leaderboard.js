@@ -1,46 +1,28 @@
-// 대시보드 JavaScript
-class Dashboard {
+// 홈화면 명예의 전당 JavaScript
+class Leaderboard {
     constructor() {
         this.currentMode = '자리';
         this.modes = ['자리', '낱말', '문장', '문단'];
         this.viewMode = 'top10'; // 'top10' 또는 'all'
-        this.currentOffset = {};
-        this.loadingMore = {};
-        
-        // 각 모드별 상태 초기화
-        this.modes.forEach(mode => {
-            this.currentOffset[mode] = 0;
-            this.loadingMore[mode] = false;
-        });
         
         this.init();
     }
 
     init() {
         this.initEventListeners();
-        this.updateToggleButton(); // 초기 토글 버튼 상태 설정
+        this.updateToggleButton();
         this.loadModeData(this.currentMode);
-        this.loadStatistics();
     }
 
     initEventListeners() {
         // 탭 클릭 이벤트
-        document.querySelectorAll('[data-bs-toggle="tab"]').forEach(tab => {
+        document.querySelectorAll('#modeTab button[data-bs-toggle="tab"]').forEach(tab => {
             tab.addEventListener('shown.bs.tab', (event) => {
                 const mode = event.target.getAttribute('data-mode');
                 this.currentMode = mode;
                 this.loadModeData(mode);
             });
         });
-
-        // 교사 로그인 버튼 (향후 구현)
-        const teacherBtn = document.getElementById('teacherLoginBtn');
-        if (teacherBtn) {
-            teacherBtn.addEventListener('click', () => {
-                // 향후 교사 로그인 모달 표시
-                console.log('교사 로그인 기능은 v0.9에서 구현됩니다');
-            });
-        }
 
         // 전체 보기/Top10 토글 버튼
         const viewToggleBtn = document.getElementById('viewToggleBtn');
@@ -51,7 +33,7 @@ class Dashboard {
         }
     }
 
-    async loadModeData(mode, reset = true) {
+    async loadModeData(mode) {
         try {
             const loadingEl = document.getElementById(`${mode}-loading`);
             const contentEl = document.getElementById(`${mode}-content`);
@@ -59,14 +41,11 @@ class Dashboard {
             const tbodyEl = document.getElementById(`${mode}-tbody`);
             const countEl = document.getElementById(`${mode}-count`);
 
-            // 초기 로딩 또는 리셋인 경우
-            if (reset) {
-                this.currentOffset[mode] = 0;
-                loadingEl.style.display = 'block';
-                contentEl.style.display = 'none';
-                emptyEl.style.display = 'none';
-                tbodyEl.innerHTML = ''; // 기존 내용 클리어
-            }
+            // 로딩 표시
+            loadingEl.style.display = 'block';
+            contentEl.style.display = 'none';
+            emptyEl.style.display = 'none';
+            tbodyEl.innerHTML = '';
 
             // API 호출 (Top10 또는 전체)
             let response;
@@ -74,7 +53,7 @@ class Dashboard {
                 response = await fetch(`/api/records/top?mode=${encodeURIComponent(mode)}`);
             } else {
                 // 전체 보기 모드에서는 큰 수로 모든 기록을 가져옴
-                const limit = 1000; // 충분히 큰 수
+                const limit = 1000;
                 const offset = 0;
                 response = await fetch(`/api/records?mode=${encodeURIComponent(mode)}&limit=${limit}&offset=${offset}`);
             }
@@ -94,34 +73,29 @@ class Dashboard {
                 countEl.textContent = pagination ? pagination.total : records.length;
             }
 
-            if (records.length === 0 && reset) {
+            if (records.length === 0) {
                 // 빈 상태 표시
                 loadingEl.style.display = 'none';
                 emptyEl.style.display = 'block';
             } else {
                 // 테이블 채우기
-                this.renderRecords(tbodyEl, records, 0);
+                this.renderRecords(tbodyEl, records);
                 
                 loadingEl.style.display = 'none';
                 contentEl.style.display = 'block';
                 
                 // 전체 보기 모드에서는 스크롤 가능한 높이 설정
-                const tableResponsive = contentEl.querySelector('.table-responsive');
+                const tableContainer = contentEl.querySelector('.table-responsive');
                 if (this.viewMode === 'all') {
-                    tableResponsive.style.maxHeight = '600px';
-                    tableResponsive.style.overflowY = 'auto';
-                    tableResponsive.classList.add('dashboard-scroll');
+                    tableContainer.style.maxHeight = '600px';
+                    tableContainer.style.overflowY = 'auto';
+                    tableContainer.classList.add('dashboard-scroll');
                 } else {
-                    tableResponsive.style.maxHeight = 'none';
-                    tableResponsive.style.overflowY = 'visible';
-                    tableResponsive.classList.remove('dashboard-scroll');
+                    tableContainer.style.maxHeight = 'none';
+                    tableContainer.style.overflowY = 'visible';
+                    tableContainer.classList.remove('dashboard-scroll');
                 }
-                
-                // 더 보기 버튼은 항상 숨김 (전체 보기에서는 불필요)
-                this.updateMoreButton(mode, null);
             }
-
-            this.loadingMore[mode] = false;
 
         } catch (error) {
             console.error(`${mode} 모드 데이터 로딩 실패:`, error);
@@ -141,34 +115,14 @@ class Dashboard {
                 emptyContent.textContent = '데이터를 불러올 수 없습니다';
                 emptyDesc.innerHTML = '네트워크 연결을 확인하고 페이지를 새로고침해주세요.<br>문제가 계속되면 관리자에게 문의하세요.';
             }
-            
-            this.loadingMore[mode] = false;
         }
     }
 
-    async loadMoreRecords(mode) {
-        // 전체 보기 모드에서는 더 보기 기능 비활성화
-        return;
-    }
-
-    updateMoreButton(mode, pagination) {
-        const moreButtonContainer = document.getElementById(`${mode}-more-container`);
-        if (!moreButtonContainer) return;
-        
-        // 전체 보기 모드에서는 더 보기 버튼 항상 숨김
-        moreButtonContainer.style.display = 'none';
-    }
-
-    appendRecords(tbody, records, startOffset) {
-        // 전체 보기 모드에서는 사용하지 않음
-        return;
-    }
-
-    renderRecords(tbody, records, startIndex = 0) {
+    renderRecords(tbody, records) {
         tbody.innerHTML = '';
         
         records.forEach((record, index) => {
-            const row = this.createRecordRow(record, startIndex + index);
+            const row = this.createRecordRow(record, index);
             tbody.appendChild(row);
         });
     }
@@ -235,7 +189,7 @@ class Dashboard {
         this.viewMode = this.viewMode === 'top10' ? 'all' : 'top10';
         
         // 현재 활성 탭 다시 로드
-        this.loadModeData(this.currentMode, true);
+        this.loadModeData(this.currentMode);
         
         // 토글 버튼 텍스트 업데이트
         this.updateToggleButton();
@@ -254,53 +208,24 @@ class Dashboard {
         }
     }
 
-    async loadStatistics() {
-        try {
-            const response = await fetch('/api/records/stats');
-            
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-            
-            const stats = await response.json();
-            
-            // 통계 업데이트
-            document.getElementById('total-students').textContent = stats.total_students || 0;
-            document.getElementById('total-records').textContent = stats.total_records || 0;
-            document.getElementById('avg-wpm').textContent = stats.avg_wpm ? Math.round(stats.avg_wpm) : 0;
-            document.getElementById('avg-accuracy').textContent = stats.avg_accuracy ? `${stats.avg_accuracy.toFixed(1)}%` : '0%';
-            
-        } catch (error) {
-            console.error('통계 데이터 로딩 실패:', error);
-            // 기본값 유지 (-)
-        }
-    }
-
     formatDuration(seconds) {
         const minutes = Math.floor(seconds / 60);
-        const remainingSeconds = seconds % 60;
-        return `${minutes}분 ${remainingSeconds}초`;
+        const secs = seconds % 60;
+        return `${minutes}분 ${secs}초`;
     }
 
     formatDate(dateString) {
-        if (!dateString) return '-';
-        
-        try {
-            const date = new Date(dateString);
-            const month = String(date.getMonth() + 1).padStart(2, '0');
-            const day = String(date.getDate()).padStart(2, '0');
-            const hour = String(date.getHours()).padStart(2, '0');
-            const minute = String(date.getMinutes()).padStart(2, '0');
-            
-            return `${month}/${day} ${hour}:${minute}`;
-        } catch (error) {
-            console.error('날짜 포맷팅 오류:', error);
-            return '-';
-        }
+        const date = new Date(dateString);
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${month}/${day} ${hours}:${minutes}`;
     }
 
-    escapeHtml(unsafe) {
-        return unsafe
+    escapeHtml(text) {
+        if (typeof text !== 'string') return text;
+        return text
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;")
@@ -309,10 +234,10 @@ class Dashboard {
     }
 }
 
-// 전역 대시보드 인스턴스
-let dashboard;
+// 전역 리더보드 인스턴스
+let leaderboard;
 
-// DOM 로드 완료 후 대시보드 초기화
+// DOM 로드 완료 후 리더보드 초기화
 document.addEventListener('DOMContentLoaded', () => {
-    dashboard = new Dashboard();
+    leaderboard = new Leaderboard();
 });
