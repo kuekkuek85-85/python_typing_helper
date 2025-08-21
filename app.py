@@ -399,8 +399,8 @@ def recalculate_wpm():
         updated_count = 0
         
         for record in records:
-            # 기존 WPM이 너무 낮은 경우에만 재계산 (0-5 WPM)
-            if record.wpm <= 5:
+            # 모든 기록을 새로운 공식으로 재계산 (일관성 확보)
+            if True:  # 모든 기록 재계산
                 duration_minutes = record.duration_sec / 60
                 
                 # 정확도 기반 추정 타이핑 글자 수
