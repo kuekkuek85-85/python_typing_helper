@@ -134,6 +134,11 @@ def practice(mode):
     mode_info = PRACTICE_MODES[mode]
     return render_template('practice.html', mode=mode, mode_info=mode_info)
 
+@app.route('/dashboard')
+def dashboard():
+    """대시보드 페이지 - Top10 랭킹"""
+    return render_template('dashboard.html', modes=PRACTICE_MODES)
+
 @app.route('/health')
 def health():
     """헬스체크 엔드포인트"""
@@ -234,6 +239,37 @@ def get_top_records():
         
     except Exception as e:
         logging.error(f"랭킹 조회 실패: {e}")
+        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
+
+# API 엔드포인트 - 통계 조회
+@app.route('/api/records/stats')
+def get_statistics():
+    """전체 통계 조회"""
+    try:
+        # 전체 학생 수 (고유 student_id)
+        total_students = db.session.query(Record.student_id).distinct().count()
+        
+        # 전체 기록 수
+        total_records = Record.query.count()
+        
+        # 평균 WPM (모든 기록의 평균)
+        avg_wpm_result = db.session.query(db.func.avg(Record.wpm)).scalar()
+        avg_wpm = float(avg_wpm_result) if avg_wpm_result else 0
+        
+        # 평균 정확도 (모든 기록의 평균)
+        avg_accuracy_result = db.session.query(db.func.avg(Record.accuracy)).scalar()
+        avg_accuracy = float(avg_accuracy_result) if avg_accuracy_result else 0
+        
+        return jsonify({
+            'success': True,
+            'total_students': total_students,
+            'total_records': total_records,
+            'avg_wpm': avg_wpm,
+            'avg_accuracy': avg_accuracy
+        })
+        
+    except Exception as e:
+        logging.error(f"통계 조회 실패: {e}")
         return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
 
 # API 엔드포인트 - 연습 텍스트 가져오기
