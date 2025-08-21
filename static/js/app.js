@@ -400,8 +400,8 @@ function updateStats() {
     const typedChars = userTypedText.length;
     const correctChars = getCorrectCharCount();
     
-    // WPM 계산 (5글자 = 1단어)
-    const wpm = Math.round((typedChars / 5) / elapsedTime) || 0;
+    // WPM 계산 (정확한 글자 수 기준, 5글자 = 1단어)
+    const wpm = Math.round((correctChars / 5) / elapsedTime) || 0;
     
     // 정확도 계산
     const accuracy = typedChars > 0 ? Math.round((correctChars / typedChars) * 100) : 100;
@@ -423,6 +423,47 @@ function getCorrectCharCount() {
         }
     }
     return correctCount;
+}
+
+// 완성된 정확한 단어 수 계산
+function getCompletedWordsCount() {
+    if (!currentText || !userTypedText) return 0;
+    
+    const words = currentText.split(' ').filter(word => word.trim() !== '');
+    let completedWords = 0;
+    let charIndex = 0;
+    
+    for (let wordIndex = 0; wordIndex < words.length; wordIndex++) {
+        const word = words[wordIndex];
+        let isWordCorrect = true;
+        
+        // 단어의 각 글자를 확인
+        for (let i = 0; i < word.length; i++) {
+            if (charIndex >= userTypedText.length || 
+                userTypedText[charIndex] !== currentText[charIndex]) {
+                isWordCorrect = false;
+                break;
+            }
+            charIndex++;
+        }
+        
+        // 단어가 완전히 정확하게 입력되었으면 카운트
+        if (isWordCorrect && charIndex <= userTypedText.length) {
+            completedWords++;
+        } else {
+            break; // 틀린 단어가 나오면 중단
+        }
+        
+        // 단어 뒤 공백 건너뛰기
+        if (charIndex < currentText.length && currentText[charIndex] === ' ') {
+            if (charIndex >= userTypedText.length || userTypedText[charIndex] !== ' ') {
+                break; // 공백도 정확해야 함
+            }
+            charIndex++;
+        }
+    }
+    
+    return completedWords;
 }
 
 // 단어 단위 진행률 기반 점수 계산
