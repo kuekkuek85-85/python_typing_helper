@@ -2,6 +2,7 @@ import os
 import logging
 import re
 from datetime import datetime
+import pytz
 from flask import Flask, render_template, request, jsonify, session
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import DeclarativeBase
@@ -56,6 +57,15 @@ ADMIN_PASS = os.environ.get("ADMIN_PASS", "admin")
 # 학생 ID 검증용 정규식
 ID_PATTERN = re.compile(r"^\d{5}\s[가-힣]{2,4}$")
 
+# 한국 시간대 설정
+KST = pytz.timezone('Asia/Seoul')
+
+def get_kst_now():
+    """현재 한국 시간 반환 (timezone naive)"""
+    # timezone aware한 KST 시간을 만든 후 naive로 변환
+    kst_time = datetime.now(KST)
+    return kst_time.replace(tzinfo=None)
+
 # 데이터베이스 모델
 class Record(db.Model):
     __tablename__ = 'records'
@@ -67,7 +77,7 @@ class Record(db.Model):
     accuracy = db.Column(db.Float, nullable=False)
     score = db.Column(db.Integer, nullable=False)
     duration_sec = db.Column(db.Integer, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=get_kst_now)
     
     def to_dict(self):
         return {
@@ -187,7 +197,7 @@ def create_record():
         if mode not in PRACTICE_MODES:
             return jsonify({'error': '올바르지 않은 연습 모드입니다.'}), 400
         
-        # 새 기록 생성
+        # 새 기록 생성 (한국 시간으로 생성)
         new_record = Record()
         new_record.student_id = student_id
         new_record.mode = mode
@@ -195,6 +205,7 @@ def create_record():
         new_record.accuracy = accuracy
         new_record.score = score
         new_record.duration_sec = duration_sec
+        new_record.created_at = get_kst_now()  # 한국 시간 명시적 설정
         
         db.session.add(new_record)
         db.session.commit()
