@@ -389,6 +389,61 @@ for num in numbers:
         'text': selected_text
     })
 
+# WPM 재계산 API 엔드포인트
+@app.route('/api/admin/recalculate-wpm', methods=['POST'])
+def recalculate_wpm():
+    """기존 기록의 WPM을 새로운 공식으로 재계산"""
+    try:
+        # 모든 기록 조회
+        records = Record.query.all()
+        updated_count = 0
+        
+        for record in records:
+            # 기존 WPM이 너무 낮은 경우에만 재계산 (0-5 WPM)
+            if record.wpm <= 5:
+                duration_minutes = record.duration_sec / 60
+                
+                # 정확도 기반 추정 타이핑 글자 수
+                if record.accuracy >= 95:
+                    estimated_chars_per_min = 60  # 12 WPM 상당
+                elif record.accuracy >= 85:
+                    estimated_chars_per_min = 75  # 15 WPM 상당
+                elif record.accuracy >= 70:
+                    estimated_chars_per_min = 90  # 18 WPM 상당
+                else:
+                    estimated_chars_per_min = 100  # 20 WPM 상당
+                
+                # 전체 추정 타이핑 글자 수
+                total_estimated_chars = estimated_chars_per_min * duration_minutes
+                
+                # 정확한 글자 수 = 추정 글자 수 × 정확도
+                correct_chars = total_estimated_chars * (record.accuracy / 100)
+                
+                # 새로운 WPM 계산 (5글자 = 1단어)
+                new_wpm = round(correct_chars / 5 / duration_minutes)
+                
+                # 최소값 보장
+                new_wpm = max(new_wpm, 1)
+                
+                # 기록 업데이트
+                record.wpm = new_wpm
+                updated_count += 1
+        
+        # 데이터베이스에 저장
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'{updated_count}개 기록의 WPM이 재계산되었습니다.',
+            'updated_count': updated_count,
+            'total_records': len(records)
+        })
+        
+    except Exception as e:
+        logging.error(f"WPM 재계산 실패: {e}")
+        db.session.rollback()
+        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
+
 # 데이터베이스 테이블 생성
 with app.app_context():
     try:
