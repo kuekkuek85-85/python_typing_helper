@@ -67,7 +67,7 @@
 ## v0.6 대시보드 Top10
 - [x] `GET /api/records/top?mode=…`
 - [x] 정렬: score desc → accuracy desc → wpm desc → created_at asc
-- [ ] Top10 렌더링, 모드 탭 4개
+- [x] Top10 렌더링, 모드 탭 4개
 
 ## v0.7 더 보기(페이지네이션)
 - [ ] `GET /api/records?mode=…&limit=10&offset=0`
