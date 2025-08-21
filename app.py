@@ -134,10 +134,7 @@ def practice(mode):
     mode_info = PRACTICE_MODES[mode]
     return render_template('practice.html', mode=mode, mode_info=mode_info)
 
-@app.route('/dashboard')
-def dashboard():
-    """대시보드 페이지 - Top10 랭킹"""
-    return render_template('dashboard.html', modes=PRACTICE_MODES)
+
 
 @app.route('/health')
 def health():
