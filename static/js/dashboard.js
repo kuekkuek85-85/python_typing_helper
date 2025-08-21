@@ -3,11 +3,22 @@ class Dashboard {
     constructor() {
         this.currentMode = '자리';
         this.modes = ['자리', '낱말', '문장', '문단'];
+        this.viewMode = 'top10'; // 'top10' 또는 'all'
+        this.currentOffset = {};
+        this.loadingMore = {};
+        
+        // 각 모드별 상태 초기화
+        this.modes.forEach(mode => {
+            this.currentOffset[mode] = 0;
+            this.loadingMore[mode] = false;
+        });
+        
         this.init();
     }
 
     init() {
         this.initEventListeners();
+        this.updateToggleButton(); // 초기 토글 버튼 상태 설정
         this.loadModeData(this.currentMode);
         this.loadStatistics();
     }
@@ -30,9 +41,17 @@ class Dashboard {
                 console.log('교사 로그인 기능은 v0.9에서 구현됩니다');
             });
         }
+
+        // 전체 보기/Top10 토글 버튼
+        const viewToggleBtn = document.getElementById('viewToggleBtn');
+        if (viewToggleBtn) {
+            viewToggleBtn.addEventListener('click', () => {
+                this.toggleViewMode();
+            });
+        }
     }
 
-    async loadModeData(mode) {
+    async loadModeData(mode, reset = true) {
         try {
             const loadingEl = document.getElementById(`${mode}-loading`);
             const contentEl = document.getElementById(`${mode}-content`);
@@ -40,13 +59,24 @@ class Dashboard {
             const tbodyEl = document.getElementById(`${mode}-tbody`);
             const countEl = document.getElementById(`${mode}-count`);
 
-            // 로딩 표시
-            loadingEl.style.display = 'block';
-            contentEl.style.display = 'none';
-            emptyEl.style.display = 'none';
+            // 초기 로딩 또는 리셋인 경우
+            if (reset) {
+                this.currentOffset[mode] = 0;
+                loadingEl.style.display = 'block';
+                contentEl.style.display = 'none';
+                emptyEl.style.display = 'none';
+                tbodyEl.innerHTML = ''; // 기존 내용 클리어
+            }
 
-            // API 호출
-            const response = await fetch(`/api/records/top?mode=${encodeURIComponent(mode)}`);
+            // API 호출 (Top10 또는 페이지네이션)
+            let response;
+            if (this.viewMode === 'top10') {
+                response = await fetch(`/api/records/top?mode=${encodeURIComponent(mode)}`);
+            } else {
+                const limit = 10;
+                const offset = this.currentOffset[mode];
+                response = await fetch(`/api/records?mode=${encodeURIComponent(mode)}&limit=${limit}&offset=${offset}`);
+            }
             
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -54,20 +84,35 @@ class Dashboard {
             
             const data = await response.json();
             const records = data.records || [];
+            const pagination = data.pagination;
 
             // 기록 수 업데이트
-            countEl.textContent = records.length;
+            if (this.viewMode === 'top10') {
+                countEl.textContent = records.length;
+            } else {
+                countEl.textContent = pagination ? pagination.total : records.length;
+            }
 
-            if (records.length === 0) {
+            if (records.length === 0 && reset) {
                 // 빈 상태 표시
                 loadingEl.style.display = 'none';
                 emptyEl.style.display = 'block';
             } else {
                 // 테이블 채우기
-                this.renderRecords(tbodyEl, records);
+                if (reset) {
+                    this.renderRecords(tbodyEl, records, 0);
+                } else {
+                    this.appendRecords(tbodyEl, records, this.currentOffset[mode]);
+                }
+                
                 loadingEl.style.display = 'none';
                 contentEl.style.display = 'block';
+                
+                // 더 보기 버튼 처리
+                this.updateMoreButton(mode, pagination);
             }
+
+            this.loadingMore[mode] = false;
 
         } catch (error) {
             console.error(`${mode} 모드 데이터 로딩 실패:`, error);
@@ -87,68 +132,135 @@ class Dashboard {
                 emptyContent.textContent = '데이터를 불러올 수 없습니다';
                 emptyDesc.innerHTML = '네트워크 연결을 확인하고 페이지를 새로고침해주세요.<br>문제가 계속되면 관리자에게 문의하세요.';
             }
+            
+            this.loadingMore[mode] = false;
         }
     }
 
-    renderRecords(tbody, records) {
+    async loadMoreRecords(mode) {
+        if (this.loadingMore[mode] || this.viewMode === 'top10') return;
+        
+        this.loadingMore[mode] = true;
+        this.currentOffset[mode] += 10;
+        
+        await this.loadModeData(mode, false);
+    }
+
+    updateMoreButton(mode, pagination) {
+        const moreButtonContainer = document.getElementById(`${mode}-more-container`);
+        if (!moreButtonContainer) return;
+        
+        if (this.viewMode === 'top10') {
+            moreButtonContainer.style.display = 'none';
+        } else if (pagination && pagination.has_more) {
+            moreButtonContainer.style.display = 'block';
+            const moreButton = moreButtonContainer.querySelector('.load-more-btn');
+            if (moreButton) {
+                moreButton.disabled = this.loadingMore[mode];
+                moreButton.innerHTML = this.loadingMore[mode] ? 
+                    '<span class="spinner-border spinner-border-sm me-2"></span>로딩 중...' :
+                    '<i class="bi bi-arrow-down-circle"></i> 더 보기';
+            }
+        } else {
+            moreButtonContainer.style.display = 'none';
+        }
+    }
+
+    appendRecords(tbody, records, startOffset) {
+        records.forEach((record, index) => {
+            const row = this.createRecordRow(record, startOffset + index);
+            tbody.appendChild(row);
+        });
+    }
+
+    renderRecords(tbody, records, startIndex = 0) {
         tbody.innerHTML = '';
         
         records.forEach((record, index) => {
-            const row = document.createElement('tr');
-            
-            // 순위 셀
-            const rankCell = document.createElement('td');
-            rankCell.className = 'text-center';
-            
-            if (index < 3) {
-                const badge = document.createElement('span');
-                badge.className = `badge bg-${index === 0 ? 'warning' : index === 1 ? 'secondary' : 'dark'}`;
-                badge.textContent = index + 1;
-                rankCell.appendChild(badge);
-            } else {
-                rankCell.textContent = index + 1;
-            }
-            
-            // 학생 ID 셀
-            const studentCell = document.createElement('td');
-            studentCell.innerHTML = `<strong>${this.escapeHtml(record.student_id)}</strong>`;
-            
-            // 점수 셀
-            const scoreCell = document.createElement('td');
-            scoreCell.className = 'text-center';
-            scoreCell.innerHTML = `<strong class="text-warning">${record.score}</strong>`;
-            
-            // WPM 셀
-            const wpmCell = document.createElement('td');
-            wpmCell.className = 'text-center';
-            wpmCell.textContent = record.wpm;
-            
-            // 정확도 셀
-            const accuracyCell = document.createElement('td');
-            accuracyCell.className = 'text-center';
-            accuracyCell.innerHTML = `<span class="text-success">${record.accuracy.toFixed(1)}%</span>`;
-            
-            // 연습 시간 셀
-            const durationCell = document.createElement('td');
-            durationCell.className = 'text-center';
-            durationCell.textContent = this.formatDuration(record.duration_sec);
-            
-            // 기록 일시 셀
-            const dateCell = document.createElement('td');
-            dateCell.className = 'text-center';
-            dateCell.innerHTML = `<small class="text-muted">${this.formatDate(record.created_at)}</small>`;
-            
-            // 행에 셀들 추가
-            row.appendChild(rankCell);
-            row.appendChild(studentCell);
-            row.appendChild(scoreCell);
-            row.appendChild(wpmCell);
-            row.appendChild(accuracyCell);
-            row.appendChild(durationCell);
-            row.appendChild(dateCell);
-            
+            const row = this.createRecordRow(record, startIndex + index);
             tbody.appendChild(row);
         });
+    }
+
+    createRecordRow(record, index) {
+        const row = document.createElement('tr');
+        
+        // 순위 셀
+        const rankCell = document.createElement('td');
+        rankCell.className = 'text-center';
+        
+        const rank = index + 1;
+        if (rank <= 3) {
+            const badge = document.createElement('span');
+            badge.className = `badge bg-${rank === 1 ? 'warning' : rank === 2 ? 'secondary' : 'dark'}`;
+            badge.textContent = rank;
+            rankCell.appendChild(badge);
+        } else {
+            rankCell.textContent = rank;
+        }
+        
+        // 학생 ID 셀
+        const studentCell = document.createElement('td');
+        studentCell.innerHTML = `<strong>${this.escapeHtml(record.student_id)}</strong>`;
+        
+        // 점수 셀
+        const scoreCell = document.createElement('td');
+        scoreCell.className = 'text-center';
+        scoreCell.innerHTML = `<strong class="text-warning">${record.score}</strong>`;
+        
+        // WPM 셀
+        const wpmCell = document.createElement('td');
+        wpmCell.className = 'text-center';
+        wpmCell.textContent = record.wpm;
+        
+        // 정확도 셀
+        const accuracyCell = document.createElement('td');
+        accuracyCell.className = 'text-center';
+        accuracyCell.innerHTML = `<span class="text-success">${record.accuracy.toFixed(1)}%</span>`;
+        
+        // 연습 시간 셀
+        const durationCell = document.createElement('td');
+        durationCell.className = 'text-center';
+        durationCell.textContent = this.formatDuration(record.duration_sec);
+        
+        // 기록 일시 셀
+        const dateCell = document.createElement('td');
+        dateCell.className = 'text-center';
+        dateCell.innerHTML = `<small class="text-muted">${this.formatDate(record.created_at)}</small>`;
+        
+        // 행에 셀들 추가
+        row.appendChild(rankCell);
+        row.appendChild(studentCell);
+        row.appendChild(scoreCell);
+        row.appendChild(wpmCell);
+        row.appendChild(accuracyCell);
+        row.appendChild(durationCell);
+        row.appendChild(dateCell);
+        
+        return row;
+    }
+
+    toggleViewMode() {
+        this.viewMode = this.viewMode === 'top10' ? 'all' : 'top10';
+        
+        // 현재 활성 탭 다시 로드
+        this.loadModeData(this.currentMode, true);
+        
+        // 토글 버튼 텍스트 업데이트
+        this.updateToggleButton();
+    }
+
+    updateToggleButton() {
+        const toggleBtn = document.getElementById('viewToggleBtn');
+        if (toggleBtn) {
+            if (this.viewMode === 'top10') {
+                toggleBtn.innerHTML = '<i class="bi bi-list"></i> 전체 보기';
+                toggleBtn.className = 'btn btn-outline-primary btn-sm';
+            } else {
+                toggleBtn.innerHTML = '<i class="bi bi-trophy"></i> Top10 보기';
+                toggleBtn.className = 'btn btn-outline-warning btn-sm';
+            }
+        }
     }
 
     async loadStatistics() {
@@ -206,7 +318,10 @@ class Dashboard {
     }
 }
 
+// 전역 대시보드 인스턴스
+let dashboard;
+
 // DOM 로드 완료 후 대시보드 초기화
 document.addEventListener('DOMContentLoaded', () => {
-    new Dashboard();
+    dashboard = new Dashboard();
 });

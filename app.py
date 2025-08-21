@@ -272,6 +272,55 @@ def get_statistics():
         logging.error(f"통계 조회 실패: {e}")
         return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
 
+# API 엔드포인트 - 페이지네이션된 기록 조회
+@app.route('/api/records')
+def get_records():
+    """페이지네이션된 기록 조회"""
+    try:
+        mode = request.args.get('mode', '자리')
+        limit = int(request.args.get('limit', 10))
+        offset = int(request.args.get('offset', 0))
+        
+        if mode not in PRACTICE_MODES:
+            return jsonify({'error': '올바르지 않은 연습 모드입니다.'}), 400
+        
+        # limit 범위 제한 (1-50)
+        limit = max(1, min(limit, 50))
+        # offset 음수 방지
+        offset = max(0, offset)
+        
+        # 총 기록 수 조회
+        total_count = Record.query.filter_by(mode=mode).count()
+        
+        # 페이지네이션된 기록 조회
+        records = Record.query.filter_by(mode=mode)\
+            .order_by(Record.score.desc(), Record.accuracy.desc(), Record.wpm.desc(), Record.created_at.asc())\
+            .offset(offset)\
+            .limit(limit)\
+            .all()
+        
+        # 다음 페이지 존재 여부
+        has_more = (offset + limit) < total_count
+        
+        return jsonify({
+            'success': True,
+            'mode': mode,
+            'records': [record.to_dict() for record in records],
+            'pagination': {
+                'limit': limit,
+                'offset': offset,
+                'total': total_count,
+                'has_more': has_more,
+                'current_count': len(records)
+            }
+        })
+        
+    except ValueError:
+        return jsonify({'error': 'limit 또는 offset이 올바르지 않습니다.'}), 400
+    except Exception as e:
+        logging.error(f"기록 조회 실패: {e}")
+        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
+
 # API 엔드포인트 - 연습 텍스트 가져오기
 @app.route('/api/practice-text/<mode>')
 def get_practice_text(mode):
