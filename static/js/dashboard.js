@@ -68,13 +68,14 @@ class Dashboard {
                 tbodyEl.innerHTML = ''; // 기존 내용 클리어
             }
 
-            // API 호출 (Top10 또는 페이지네이션)
+            // API 호출 (Top10 또는 전체)
             let response;
             if (this.viewMode === 'top10') {
                 response = await fetch(`/api/records/top?mode=${encodeURIComponent(mode)}`);
             } else {
-                const limit = 10;
-                const offset = this.currentOffset[mode];
+                // 전체 보기 모드에서는 큰 수로 모든 기록을 가져옴
+                const limit = 1000; // 충분히 큰 수
+                const offset = 0;
                 response = await fetch(`/api/records?mode=${encodeURIComponent(mode)}&limit=${limit}&offset=${offset}`);
             }
             
@@ -99,17 +100,25 @@ class Dashboard {
                 emptyEl.style.display = 'block';
             } else {
                 // 테이블 채우기
-                if (reset) {
-                    this.renderRecords(tbodyEl, records, 0);
-                } else {
-                    this.appendRecords(tbodyEl, records, this.currentOffset[mode]);
-                }
+                this.renderRecords(tbodyEl, records, 0);
                 
                 loadingEl.style.display = 'none';
                 contentEl.style.display = 'block';
                 
-                // 더 보기 버튼 처리
-                this.updateMoreButton(mode, pagination);
+                // 전체 보기 모드에서는 스크롤 가능한 높이 설정
+                const tableResponsive = contentEl.querySelector('.table-responsive');
+                if (this.viewMode === 'all') {
+                    tableResponsive.style.maxHeight = '600px';
+                    tableResponsive.style.overflowY = 'auto';
+                    tableResponsive.classList.add('dashboard-scroll');
+                } else {
+                    tableResponsive.style.maxHeight = 'none';
+                    tableResponsive.style.overflowY = 'visible';
+                    tableResponsive.classList.remove('dashboard-scroll');
+                }
+                
+                // 더 보기 버튼은 항상 숨김 (전체 보기에서는 불필요)
+                this.updateMoreButton(mode, null);
             }
 
             this.loadingMore[mode] = false;
@@ -138,39 +147,21 @@ class Dashboard {
     }
 
     async loadMoreRecords(mode) {
-        if (this.loadingMore[mode] || this.viewMode === 'top10') return;
-        
-        this.loadingMore[mode] = true;
-        this.currentOffset[mode] += 10;
-        
-        await this.loadModeData(mode, false);
+        // 전체 보기 모드에서는 더 보기 기능 비활성화
+        return;
     }
 
     updateMoreButton(mode, pagination) {
         const moreButtonContainer = document.getElementById(`${mode}-more-container`);
         if (!moreButtonContainer) return;
         
-        if (this.viewMode === 'top10') {
-            moreButtonContainer.style.display = 'none';
-        } else if (pagination && pagination.has_more) {
-            moreButtonContainer.style.display = 'block';
-            const moreButton = moreButtonContainer.querySelector('.load-more-btn');
-            if (moreButton) {
-                moreButton.disabled = this.loadingMore[mode];
-                moreButton.innerHTML = this.loadingMore[mode] ? 
-                    '<span class="spinner-border spinner-border-sm me-2"></span>로딩 중...' :
-                    '<i class="bi bi-arrow-down-circle"></i> 더 보기';
-            }
-        } else {
-            moreButtonContainer.style.display = 'none';
-        }
+        // 전체 보기 모드에서는 더 보기 버튼 항상 숨김
+        moreButtonContainer.style.display = 'none';
     }
 
     appendRecords(tbody, records, startOffset) {
-        records.forEach((record, index) => {
-            const row = this.createRecordRow(record, startOffset + index);
-            tbody.appendChild(row);
-        });
+        // 전체 보기 모드에서는 사용하지 않음
+        return;
     }
 
     renderRecords(tbody, records, startIndex = 0) {
