@@ -825,11 +825,12 @@ function highlightNextKey() {
     if (targetKey) {
         targetKey.classList.add('next-key');
         
-        // 특수문자인 경우 Shift 키도 강조
+        // 특수문자인 경우 적절한 Shift 키만 강조
         if (isShiftRequired(nextChar)) {
-            document.querySelectorAll('.key[data-key="Shift"]').forEach(shiftKey => {
-                shiftKey.classList.add('next-key');
-            });
+            const appropriateShift = getAppropriateShift(nextChar);
+            if (appropriateShift) {
+                appropriateShift.classList.add('next-key');
+            }
         }
     }
 }
@@ -838,6 +839,42 @@ function highlightNextKey() {
 function isShiftRequired(char) {
     const shiftChars = '!@#$%^&*()_+{}|:"<>?~ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     return shiftChars.includes(char);
+}
+
+// 문자에 따라 적절한 Shift 키 선택 (키보드 자판 위치 기반)
+function getAppropriateShift(char) {
+    // 모든 Shift 키를 찾기
+    const shiftKeys = document.querySelectorAll('.key[data-key="Shift"]');
+    if (shiftKeys.length < 2) {
+        return shiftKeys[0]; // Shift 키가 하나만 있으면 그것 사용
+    }
+    
+    // 왼쪽 Shift를 사용해야 하는 문자들 (오른쪽 손으로 누르는 키들)
+    // 숫자 행: 6,7,8,9,0과 그 특수문자들
+    // 상단 행: Y,U,I,O,P와 관련 특수문자들  
+    // 중간 행: H,J,K,L과 관련 특수문자들
+    // 하단 행: N,M과 관련 특수문자들
+    const leftShiftChars = '67890YUIOPHJKLNM^&*()_+<>?';
+    
+    // 오른쪽 Shift를 사용해야 하는 문자들 (왼쪽 손으로 누르는 키들)
+    // 숫자 행: 1,2,3,4,5와 그 특수문자들
+    // 상단 행: Q,W,E,R,T와 관련 특수문자들
+    // 중간 행: A,S,D,F,G와 관련 특수문자들  
+    // 하단 행: Z,X,C,V,B와 관련 특수문자들
+    const rightShiftChars = '12345QWERTYASDFGZXCVB!@#$%~{}|:"';
+    
+    // 왼쪽 Shift 사용 (배열의 첫 번째)
+    if (leftShiftChars.includes(char)) {
+        return shiftKeys[0];
+    }
+    
+    // 오른쪽 Shift 사용 (배열의 마지막)
+    if (rightShiftChars.includes(char)) {
+        return shiftKeys[1];
+    }
+    
+    // 기본값: 왼쪽 Shift
+    return shiftKeys[0];
 }
 
 // 문자에 해당하는 키 찾기
