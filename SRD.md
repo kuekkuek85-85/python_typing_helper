@@ -1,6 +1,6 @@
-# 파이썬 타자 도우미 – Replit 개발 체크리스트 (Step by Step)
+# 파이썬 타자 도우미 – System Requirement Document (SRD)
 
-> 목표: 본 README는 **수업 현장 배포 가능한 최소 단위**부터 기능을 점진적으로 붙여 **안정적으로 1.0 출시**하는 것을 돕습니다.
+> 목표: 본 SRD는 **수업 현장 배포 가능한 최소 단위**부터 기능을 점진적으로 붙여 **안정적으로 1.0 출시**하는 것을 돕습니다.
 > 기타: 개발하는 과정에서의 AI agent는 모든 과정과 답변을 한국어로 답변하도록 합니다.
 > 스택: Flask + HTML/CSS/JS + Supabase(PostgreSQL)
 
