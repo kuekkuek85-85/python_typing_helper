@@ -244,6 +244,14 @@
     animation: keyPulse 1.5s infinite;
 }
 
+/* Caps Lock 활성화 상태 스타일 */
+.key.caps-lock-active {
+    background: linear-gradient(135deg, var(--bs-warning) 0%, #ff9f43 100%) !important;
+    color: var(--bs-dark) !important;
+    border-color: var(--bs-warning) !important;
+    box-shadow: 0 0 10px rgba(255, 193, 7, 0.7) !important;
+}
+
 .key-wide {
     min-width: 80px;
 }
