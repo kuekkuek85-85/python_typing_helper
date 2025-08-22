@@ -301,6 +301,9 @@ function startPractice() {
     // 커서를 맨 앞으로 이동
     elements.userInput.setSelectionRange(0, 0);
     
+    // IME를 영어로 설정 (한글 입력 모드를 영문 입력 모드로 전환)
+    setInputModeToEnglish();
+    
     // 타이머 시작
     startTime = Date.now();
     isTimerRunning = true;
@@ -769,6 +772,73 @@ function formatTime(seconds) {
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = seconds % 60;
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+}
+
+// IME를 영어로 설정하는 함수
+function setInputModeToEnglish() {
+    try {
+        const input = elements.userInput;
+        
+        // 입력창에 영어 입력 모드 속성 설정
+        input.lang = 'en';
+        input.setAttribute('inputmode', 'latin');
+        input.setAttribute('autocapitalize', 'off');
+        input.setAttribute('autocorrect', 'off');
+        input.setAttribute('autocomplete', 'off');
+        input.setAttribute('spellcheck', 'false');
+        
+        // compositionstart 이벤트로 한글 입력 감지 및 경고
+        input.addEventListener('compositionstart', function(e) {
+            // 한글 입력이 시작되면 사용자에게 알림
+            showIMEWarning();
+        });
+        
+        // compositionend 이벤트로 한글 입력 종료 처리
+        input.addEventListener('compositionend', function(e) {
+            // 한글 입력이 완료되면 입력값 제거
+            setTimeout(() => {
+                const koreanRegex = /[ㄱ-ㅎㅏ-ㅣ가-힣]/;
+                if (koreanRegex.test(input.value)) {
+                    input.value = userTypedText; // 이전 상태로 복원
+                    showIMEWarning();
+                }
+            }, 10);
+        });
+        
+    } catch (error) {
+        console.log('IME 설정 실패:', error);
+    }
+}
+
+// 한글 입력 모드 경고 표시
+function showIMEWarning() {
+    // 기존 경고가 있으면 제거
+    const existingWarning = document.getElementById('imeWarning');
+    if (existingWarning) {
+        existingWarning.remove();
+    }
+    
+    // 경고 메시지 생성
+    const warning = document.createElement('div');
+    warning.id = 'imeWarning';
+    warning.className = 'alert alert-warning alert-dismissible fade show mt-2';
+    warning.style.position = 'relative';
+    warning.innerHTML = `
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <strong>한영 전환 필요!</strong> 한글 입력 모드를 영문 입력 모드로 변경해주세요. (한영키 또는 Alt+한영키)
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    // 입력창 아래에 경고 표시
+    const inputContainer = elements.userInput.parentElement;
+    inputContainer.appendChild(warning);
+    
+    // 3초 후 자동 제거
+    setTimeout(() => {
+        if (warning.parentElement) {
+            warning.remove();
+        }
+    }, 3000);
 }
 
 // 가상 키보드 설정 함수
