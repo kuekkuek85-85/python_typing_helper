@@ -15,6 +15,9 @@ let accumulatedScore = 0; // 누적된 총 점수
 let completedWords = []; // 완료된 단어들의 정보
 let lastScoredWordIndex = -1; // 마지막으로 점수를 준 단어 인덱스
 
+// 키보드 상태 변수들
+let isCapsLockOn = false; // Caps Lock 상태 추적
+
 // 효과음을 위한 Audio Context
 let audioContext = null;
 
@@ -354,6 +357,13 @@ function handleKeyDown(event) {
     // 첫 번째 키 입력 시 오디오 컨텍스트 활성화
     if (audioContext && audioContext.state === 'suspended') {
         audioContext.resume();
+    }
+    
+    // Caps Lock 키 처리
+    if (event.key === 'CapsLock') {
+        event.preventDefault(); // 기본 동작 방지
+        toggleCapsLock();
+        return;
     }
     
     // 연습이 시작되지 않았다면 자동 시작
@@ -841,14 +851,52 @@ function showIMEWarning() {
     }, 3000);
 }
 
+// Caps Lock 상태 토글 함수
+function toggleCapsLock() {
+    isCapsLockOn = !isCapsLockOn;
+    updateKeyboardDisplay();
+    
+    // Caps Lock 키에 시각적 효과 추가
+    const capsLockKey = document.querySelector('.key[data-key="CapsLock"]');
+    if (capsLockKey) {
+        if (isCapsLockOn) {
+            capsLockKey.classList.add('caps-lock-active');
+        } else {
+            capsLockKey.classList.remove('caps-lock-active');
+        }
+        animateKey(capsLockKey);
+    }
+}
+
+// 키보드 표시 업데이트 (Caps Lock 상태에 따라)
+function updateKeyboardDisplay() {
+    const letterSpans = document.querySelectorAll('.key-letter');
+    
+    letterSpans.forEach(span => {
+        const letter = span.textContent.toLowerCase();
+        if (isCapsLockOn) {
+            span.textContent = letter.toUpperCase();
+        } else {
+            span.textContent = letter.toLowerCase();
+        }
+    });
+}
+
 // 가상 키보드 설정 함수
 function setupVirtualKeyboard() {
     const keys = document.querySelectorAll('.key');
     keys.forEach(key => {
         key.addEventListener('click', function() {
+            const keyValue = this.dataset.key;
+            
+            // Caps Lock 키 처리
+            if (keyValue === 'CapsLock') {
+                toggleCapsLock();
+                return;
+            }
+            
             // 가상 키보드 클릭 시 해당 문자를 입력창에 추가
             if (elements.userInput && !elements.userInput.disabled) {
-                const keyValue = this.dataset.key;
                 if (keyValue === ' ') {
                     elements.userInput.value += ' ';
                 } else if (keyValue === 'Backspace') {
@@ -858,7 +906,12 @@ function setupVirtualKeyboard() {
                 } else if (keyValue === 'Tab') {
                     elements.userInput.value += '\t';
                 } else if (keyValue.length === 1) {
-                    elements.userInput.value += keyValue;
+                    // 영문자인 경우 Caps Lock 상태에 따라 대소문자 결정
+                    let inputChar = keyValue;
+                    if (/[a-zA-Z]/.test(keyValue)) {
+                        inputChar = isCapsLockOn ? keyValue.toUpperCase() : keyValue.toLowerCase();
+                    }
+                    elements.userInput.value += inputChar;
                 }
                 
                 // 키 애니메이션 효과
