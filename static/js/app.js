@@ -321,6 +321,20 @@ function showLanguageCheckDialog() {
                         <strong>한영 키</strong> 또는 <strong>Alt + 한영 키</strong>를 눌러서<br>
                         영문 입력 모드로 변경해주세요.
                     </div>
+                    <!-- 한영 키 전환을 위한 숨겨진 입력 필드 -->
+                    <input type="text" id="langCheckInput" style="position: absolute; left: -9999px; opacity: 0;" 
+                           placeholder="한영키 테스트" autocomplete="off">
+                    <div class="mb-3">
+                        <small class="text-muted">
+                            💡 한영 키를 눌러서 입력 모드를 변경하세요.<br>
+                            아래 입력창에 영문으로 타이핑되면 준비 완료입니다.
+                        </small>
+                    </div>
+                    <div class="mb-3">
+                        <input type="text" id="testInput" class="form-control" 
+                               placeholder="여기에 영문으로 타이핑해보세요 (예: test)" 
+                               maxlength="20" autocomplete="off">
+                    </div>
                     <p class="text-muted small">영문 입력 모드가 준비되면 '연습 시작' 버튼을 눌러주세요.</p>
                 </div>
                 <div class="modal-footer justify-content-center">
@@ -339,6 +353,48 @@ function showLanguageCheckDialog() {
     
     // 대화상자를 페이지에 추가
     document.body.appendChild(dialog);
+    
+    // 테스트 입력창에 포커스 및 이벤트 리스너 추가
+    setTimeout(() => {
+        const testInput = document.getElementById('testInput');
+        if (testInput) {
+            testInput.focus();
+            
+            // 한글 입력 감지 및 피드백
+            testInput.addEventListener('input', function() {
+                const koreanRegex = /[ㄱ-ㅎㅏ-ㅣ가-힣]/;
+                const hasKorean = koreanRegex.test(this.value);
+                
+                if (hasKorean) {
+                    this.style.borderColor = '#dc3545';
+                    this.style.backgroundColor = '#f8d7da';
+                    this.placeholder = '한글이 입력되었습니다. 한영키를 눌러주세요!';
+                } else if (this.value.length > 0) {
+                    this.style.borderColor = '#198754';
+                    this.style.backgroundColor = '#d1e7dd';
+                    this.placeholder = '영문 입력 모드 준비 완료!';
+                } else {
+                    this.style.borderColor = '';
+                    this.style.backgroundColor = '';
+                    this.placeholder = '여기에 영문으로 타이핑해보세요 (예: test)';
+                }
+            });
+            
+            // IME 상태 변화 감지
+            testInput.addEventListener('compositionstart', function() {
+                this.style.borderColor = '#ffc107';
+                this.style.backgroundColor = '#fff3cd';
+                this.placeholder = '한글 입력 모드입니다. 한영키를 눌러주세요!';
+            });
+            
+            testInput.addEventListener('compositionend', function() {
+                // composition 종료 후 다시 검사
+                setTimeout(() => {
+                    this.dispatchEvent(new Event('input'));
+                }, 10);
+            });
+        }
+    }, 100);
 }
 
 // 한영 키 확인 대화상자 닫기
