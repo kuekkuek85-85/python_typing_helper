@@ -52,8 +52,8 @@ class Leaderboard {
             if (this.viewMode === 'top10') {
                 response = await fetch(`/api/records/top?mode=${encodeURIComponent(mode)}`);
             } else {
-                // 전체 보기 모드에서는 큰 수로 모든 기록을 가져옴
-                const limit = 1000;
+                // 전체 보기 모드에서는 모든 기록을 가져옴
+                const limit = 10000; // 충분히 큰 수로 모든 기록 확보
                 const offset = 0;
                 response = await fetch(`/api/records?mode=${encodeURIComponent(mode)}&limit=${limit}&offset=${offset}`);
             }
