@@ -121,20 +121,50 @@ class Leaderboard {
     renderRecords(tbody, records) {
         tbody.innerHTML = '';
         
-        records.forEach((record, index) => {
-            const row = this.createRecordRow(record, index);
+        // 동점자를 고려한 등수 계산
+        const rankedRecords = this.calculateRanks(records);
+        
+        rankedRecords.forEach((record) => {
+            const row = this.createRecordRow(record);
             tbody.appendChild(row);
         });
     }
 
-    createRecordRow(record, index) {
+    calculateRanks(records) {
+        const rankedRecords = [];
+        let currentRank = 1;
+        
+        for (let i = 0; i < records.length; i++) {
+            const record = records[i];
+            
+            // 이전 기록과 비교하여 등수 결정
+            if (i > 0) {
+                const prevRecord = records[i - 1];
+                // 점수, 정확도, WPM이 모두 다르면 등수 증가
+                if (record.score !== prevRecord.score || 
+                    record.accuracy !== prevRecord.accuracy || 
+                    record.wpm !== prevRecord.wpm) {
+                    currentRank = i + 1;
+                }
+            }
+            
+            rankedRecords.push({
+                ...record,
+                rank: currentRank
+            });
+        }
+        
+        return rankedRecords;
+    }
+
+    createRecordRow(record) {
         const row = document.createElement('tr');
         
         // 순위 셀
         const rankCell = document.createElement('td');
         rankCell.className = 'text-center';
         
-        const rank = index + 1;
+        const rank = record.rank;
         if (rank <= 3) {
             const badge = document.createElement('span');
             badge.className = `badge bg-${rank === 1 ? 'warning' : rank === 2 ? 'secondary' : 'dark'}`;
