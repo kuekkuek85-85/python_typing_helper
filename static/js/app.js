@@ -849,21 +849,11 @@ function getAppropriateShift(char) {
         return shiftKeys[0]; // Shift 키가 하나만 있으면 그것 사용
     }
     
-    // 왼쪽 Shift를 사용해야 하는 문자들 (오른쪽 손으로 누르는 키들)
-    // 숫자 행: 6,7,8,9,0과 그 특수문자들
-    // 상단 행: Y,U,I,O,P와 관련 특수문자들  
-    // 중간 행: H,J,K,L과 관련 특수문자들
-    // 하단 행: N,M과 관련 특수문자들
-    // 오른쪽 특수키들: -=[];\',./와 그 Shift 버전들
-    const leftShiftChars = '67890YUIOPHJKLNM^&*(){}|:"<>?_+[];\',./';
+    // 왼쪽 Shift를 사용해야 하는 문자들
+    const leftShiftChars = '~!@#$%QWERTYASDFGZXCVB';
     
-    // 오른쪽 Shift를 사용해야 하는 문자들 (왼쪽 손으로 누르는 키들)
-    // 숫자 행: 1,2,3,4,5와 그 특수문자들
-    // 상단 행: Q,W,E,R,T와 관련 특수문자들
-    // 중간 행: A,S,D,F,G와 관련 특수문자들
-    // 하단 행: Z,X,C,V,B와 관련 특수문자들
-    // 왼쪽 특수키들: `~
-    const rightShiftChars = '12345QWERTYASDFGZXCVB!@#$%`~';
+    // 나머지 Shift (오른쪽 Shift)를 사용해야 하는 문자들
+    const rightShiftChars = '^&*()_+{}|:"<>?YUIOPHJKLNM';
     
     // 왼쪽 Shift 사용 (배열의 첫 번째)
     if (leftShiftChars.includes(char)) {
