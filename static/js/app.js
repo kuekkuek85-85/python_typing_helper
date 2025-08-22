@@ -284,6 +284,81 @@ function renderPracticeText() {
 function startPractice() {
     if (isTimerRunning) return;
     
+    // 한영 키 확인 메시지 표시
+    showLanguageCheckDialog();
+}
+
+// 한영 키 확인 대화상자 표시
+function showLanguageCheckDialog() {
+    // 기존 대화상자가 있으면 제거
+    const existingDialog = document.getElementById('languageCheckDialog');
+    if (existingDialog) {
+        existingDialog.remove();
+    }
+    
+    // 대화상자 생성
+    const dialog = document.createElement('div');
+    dialog.id = 'languageCheckDialog';
+    dialog.className = 'modal fade show';
+    dialog.style.display = 'block';
+    dialog.style.backgroundColor = 'rgba(0,0,0,0.5)';
+    dialog.innerHTML = `
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-keyboard me-2"></i>
+                        한영 키 확인
+                    </h5>
+                </div>
+                <div class="modal-body text-center">
+                    <div class="mb-3">
+                        <i class="bi bi-exclamation-triangle-fill text-warning" style="font-size: 3rem;"></i>
+                    </div>
+                    <h6 class="mb-3">연습을 시작하기 전에 입력 모드를 확인해주세요!</h6>
+                    <p class="mb-3">파이썬 타자 연습은 <strong>영문 입력 모드</strong>에서 진행됩니다.</p>
+                    <div class="alert alert-info mb-3">
+                        <strong>한영 키</strong> 또는 <strong>Alt + 한영 키</strong>를 눌러서<br>
+                        영문 입력 모드로 변경해주세요.
+                    </div>
+                    <p class="text-muted small">영문 입력 모드가 준비되면 '연습 시작' 버튼을 눌러주세요.</p>
+                </div>
+                <div class="modal-footer justify-content-center">
+                    <button type="button" class="btn btn-secondary" onclick="closeLangCheckDialog()">
+                        <i class="bi bi-x-lg"></i>
+                        취소
+                    </button>
+                    <button type="button" class="btn btn-success" onclick="confirmLanguageAndStart()">
+                        <i class="bi bi-play-fill"></i>
+                        연습 시작
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // 대화상자를 페이지에 추가
+    document.body.appendChild(dialog);
+}
+
+// 한영 키 확인 대화상자 닫기
+function closeLangCheckDialog() {
+    const dialog = document.getElementById('languageCheckDialog');
+    if (dialog) {
+        dialog.remove();
+    }
+}
+
+// 언어 확인 후 연습 시작
+function confirmLanguageAndStart() {
+    closeLangCheckDialog();
+    actuallyStartPractice();
+}
+
+// 실제 연습 시작 함수
+function actuallyStartPractice() {
+    if (isTimerRunning) return;
+    
     // 입력창 완전 초기화
     elements.userInput.value = '';
     userTypedText = '';
@@ -366,9 +441,9 @@ function handleKeyDown(event) {
         return;
     }
     
-    // 연습이 시작되지 않았다면 자동 시작
+    // 연습이 시작되지 않았다면 한영 키 확인 대화상자 표시
     if (!isTimerRunning && event.key.length === 1) {
-        startPractice();
+        showLanguageCheckDialog();
     }
 }
 
