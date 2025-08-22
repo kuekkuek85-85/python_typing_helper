@@ -292,8 +292,8 @@ def get_records():
         if mode not in PRACTICE_MODES:
             return jsonify({'error': '올바르지 않은 연습 모드입니다.'}), 400
         
-        # limit 범위 제한 (1-50)
-        limit = max(1, min(limit, 50))
+        # limit 범위 제한 (1-10000, 전체 보기 지원)
+        limit = max(1, min(limit, 10000))
         # offset 음수 방지
         offset = max(0, offset)
         
