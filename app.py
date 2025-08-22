@@ -410,31 +410,43 @@ def recalculate_wpm():
         updated_count = 0
         
         for record in records:
-            # 모든 기록을 새로운 공식으로 재계산 (일관성 확보)
-            if True:  # 모든 기록 재계산
+            # 비현실적으로 낮은 WPM (20 이하) 기록만 재계산
+            if record.wpm <= 20:
                 duration_minutes = record.duration_sec / 60
                 
-                # 정확도 기반 추정 타이핑 글자 수
-                if record.accuracy >= 95:
-                    estimated_chars_per_min = 60  # 12 WPM 상당
-                elif record.accuracy >= 85:
-                    estimated_chars_per_min = 75  # 15 WPM 상당
+                # 더 현실적인 WPM 계산 (중학생 실제 타이핑 속도 고려)
+                # 정확도와 연습 시간을 기반으로 한 추정
+                if record.accuracy >= 98:
+                    # 매우 높은 정확도: 신중하게 타이핑
+                    base_wpm = 18
+                elif record.accuracy >= 90:
+                    # 높은 정확도: 적당한 속도
+                    base_wpm = 22
+                elif record.accuracy >= 80:
+                    # 보통 정확도: 빠르게 타이핑하다 일부 실수
+                    base_wpm = 25
                 elif record.accuracy >= 70:
-                    estimated_chars_per_min = 90  # 18 WPM 상당
+                    # 낮은 정확도: 빠르게 타이핑하다 많은 실수
+                    base_wpm = 28
                 else:
-                    estimated_chars_per_min = 100  # 20 WPM 상당
+                    # 매우 낮은 정확도: 매우 빠르게 시도했으나 실수 많음
+                    base_wpm = 30
                 
-                # 전체 추정 타이핑 글자 수
-                total_estimated_chars = estimated_chars_per_min * duration_minutes
+                # 모드별 난이도 조정
+                if record.mode == '자리':
+                    difficulty_factor = 0.7  # 기본 자리 연습은 쉬움
+                elif record.mode == '낱말':
+                    difficulty_factor = 0.8  # 단어는 조금 어려움
+                elif record.mode == '문장':
+                    difficulty_factor = 0.9  # 문장은 더 어려움
+                else:  # 문단
+                    difficulty_factor = 1.0  # 문단은 가장 어려움
                 
-                # 정확한 글자 수 = 추정 글자 수 × 정확도
-                correct_chars = total_estimated_chars * (record.accuracy / 100)
+                # 최종 WPM 계산
+                new_wpm = round(base_wpm * difficulty_factor)
                 
-                # 새로운 WPM 계산 (5글자 = 1단어)
-                new_wpm = round(correct_chars / 5 / duration_minutes)
-                
-                # 최소값 보장
-                new_wpm = max(new_wpm, 1)
+                # 합리적인 범위 보장 (중학생 기준: 12-35 WPM)
+                new_wpm = max(12, min(new_wpm, 35))
                 
                 # 기록 업데이트
                 record.wpm = new_wpm
