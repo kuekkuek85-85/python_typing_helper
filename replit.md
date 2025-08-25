@@ -66,3 +66,15 @@ Preferred communication style: Simple, everyday language.
 - **Required Secrets**: SUPABASE_URL, SUPABASE_ANON_KEY, ADMIN_USER, ADMIN_PASS, SESSION_SECRET
 - **Database Setup**: Automated table creation with proper indexing for performance
 - **Deployment**: Single-click Replit deployment with automatic dependency installation
+
+## Known Issues and Solutions
+
+### School Network Connectivity (학교 네트워크 접속 문제)
+- **Issue**: Safari shows "네트워크 서버에 보안 연결할 수 없기 때문에 Safari가 해당 페이지를 열 수 없다" message on school WiFi
+- **Cause**: School firewall blocks or restricts HTTPS connections to Replit domains (*.replit.app)
+- **Solutions**:
+  1. Try accessing via different browsers (Chrome, Firefox)
+  2. Use mobile data temporarily for testing
+  3. Request IT department to whitelist *.replit.app domains
+  4. Consider deployment to alternative hosting platforms for classroom use
+- **Alternative Access**: Consider using Replit mobile app or requesting network administrator assistance
