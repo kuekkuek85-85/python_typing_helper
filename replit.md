@@ -78,3 +78,24 @@ Preferred communication style: Simple, everyday language.
   3. Request IT department to whitelist *.replit.app domains
   4. Consider deployment to alternative hosting platforms for classroom use
 - **Alternative Access**: Consider using Replit mobile app or requesting network administrator assistance
+
+## Deployment Options
+
+### Railway Deployment (Recommended for School Use)
+- **Platform**: Railway.app with free $5 credit (500 hours/month)
+- **School Compatibility**: Uses standard HTTPS port 443, rarely blocked by firewalls
+- **URL Format**: `yourapp.up.railway.app`
+- **Setup**: GitHub integration with automatic deployment
+- **Database**: Compatible with existing Supabase configuration
+- **Configuration Files**: Procfile, railway.json, and environment variables setup
+
+### Alternative Deployment Platforms
+1. **PythonAnywhere**: Educational-focused with free tier (`username.pythonanywhere.com`)
+2. **Render**: 750 hours/month free with CDN support (`yourapp.onrender.com`)  
+3. **Vercel**: Serverless deployment with global CDN (`yourapp.vercel.app`)
+
+### Deployment Preparation
+- **Port Configuration**: Dynamic PORT environment variable support in main.py
+- **Process Management**: Gunicorn WSGI server configuration for production
+- **Environment Variables**: All secrets properly configured for external deployment
+- **Documentation**: Complete deployment guide available in DEPLOYMENT.md
