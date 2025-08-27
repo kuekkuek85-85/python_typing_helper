@@ -544,9 +544,9 @@ function updateStats() {
     const typedChars = userTypedText.length;
     const correctChars = getCorrectCharCount();
     
-    // WPM 계산 (정확한 글자 수 기준, 5글자 = 1단어)
+    // 분당 타자 수 계산 (정확한 글자 수 기준)
     // elapsedTime이 0보다 클 때만 계산하고, 최소 0.1분(6초) 이상일 때 의미있는 값
-    const wpm = elapsedTime > 0.1 ? Math.round((correctChars / 5) / elapsedTime) : 0;
+    const wpm = elapsedTime > 0.1 ? Math.round(correctChars / elapsedTime) : 0;
     
     // 정확도 계산
     const accuracy = typedChars > 0 ? Math.round((correctChars / typedChars) * 100) : 100;
