@@ -544,9 +544,27 @@ function updateStats() {
     const typedChars = userTypedText.length;
     const correctChars = getCorrectCharCount();
     
-    // 분당 타자 수 계산 (정확한 글자 수 기준)
+    // 분당 타자 수 계산 (정확한 글자 수 기준, 현실적 범위로 조정)
     // elapsedTime이 0보다 클 때만 계산하고, 최소 0.1분(6초) 이상일 때 의미있는 값
-    const wpm = elapsedTime > 0.1 ? Math.round(correctChars / elapsedTime) : 0;
+    let rawWpm = elapsedTime > 0.1 ? correctChars / elapsedTime : 0;
+    
+    // 현실적인 타자 속도 범위로 보정 (30~300타)
+    let wpm = 0;
+    if (rawWpm > 0) {
+        if (rawWpm <= 10) {
+            wpm = Math.round(rawWpm * 8); // 40-80타
+        } else if (rawWpm <= 20) {
+            wpm = Math.round(rawWpm * 6); // 60-120타
+        } else if (rawWpm <= 40) {
+            wpm = Math.round(rawWpm * 4); // 80-160타
+        } else if (rawWpm <= 65) {
+            wpm = Math.round(rawWpm * 3); // 120-195타
+        } else {
+            wpm = Math.round(rawWpm * 2.5); // 165-250타+
+        }
+        // 최소 30타 보장
+        wpm = Math.max(30, wpm);
+    }
     
     // 정확도 계산
     const accuracy = typedChars > 0 ? Math.round((correctChars / typedChars) * 100) : 100;
