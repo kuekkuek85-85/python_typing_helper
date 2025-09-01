@@ -10,10 +10,8 @@ let lastTypedLength = 0; // 마지막으로 타이핑한 길이 추적
 // 전역 상태 변수
 let practiceCompleted = false;
 
-// 진행률 기반 점수 누적을 위한 변수들
-let accumulatedScore = 0; // 누적된 총 점수
-let completedWords = []; // 완료된 단어들의 정보
-let lastScoredWordIndex = -1; // 마지막으로 점수를 준 단어 인덱스
+// 전역 점수 변수
+let currentScore = 0;
 
 // 키보드 상태 변수들
 let isCapsLockOn = false; // Caps Lock 상태 추적
@@ -420,10 +418,8 @@ function actuallyStartPractice() {
     userTypedText = '';
     lastTypedLength = 0;
     
-    // 진행률 기반 점수 누적 변수 강제 초기화
-    accumulatedScore = 0;
-    completedWords = [];
-    lastScoredWordIndex = -1;
+    // 점수 초기화
+    currentScore = 0;
     
 
     
@@ -569,13 +565,13 @@ function updateStats() {
     // 정확도 계산
     const accuracy = typedChars > 0 ? Math.round((correctChars / typedChars) * 100) : 100;
     
-    // 진행률 기반 점수 계산 (단어 단위로)
-    calculateProgressScore();
+    // 최종 점수 계산: WPM * (정확도/100)^2 * 100
+    currentScore = Math.round(Math.max(0, wpm) * Math.pow(accuracy/100, 2) * 100);
     
     // UI 업데이트
     elements.wpm.textContent = wpm;
     elements.accuracy.textContent = `${accuracy}%`;
-    elements.score.textContent = accumulatedScore;
+    elements.score.textContent = currentScore;
 }
 
 function getCorrectCharCount() {
@@ -588,176 +584,12 @@ function getCorrectCharCount() {
     return correctCount;
 }
 
-// 완성된 정확한 단어 수 계산
-function getCompletedWordsCount() {
-    if (!currentText || !userTypedText) return 0;
-    
-    const words = currentText.split(' ').filter(word => word.trim() !== '');
-    let completedWords = 0;
-    let charIndex = 0;
-    
-    for (let wordIndex = 0; wordIndex < words.length; wordIndex++) {
-        const word = words[wordIndex];
-        let isWordCorrect = true;
-        
-        // 단어의 각 글자를 확인
-        for (let i = 0; i < word.length; i++) {
-            if (charIndex >= userTypedText.length || 
-                userTypedText[charIndex] !== currentText[charIndex]) {
-                isWordCorrect = false;
-                break;
-            }
-            charIndex++;
-        }
-        
-        // 단어가 완전히 정확하게 입력되었으면 카운트
-        if (isWordCorrect && charIndex <= userTypedText.length) {
-            completedWords++;
-        } else {
-            break; // 틀린 단어가 나오면 중단
-        }
-        
-        // 단어 뒤 공백 건너뛰기
-        if (charIndex < currentText.length && currentText[charIndex] === ' ') {
-            if (charIndex >= userTypedText.length || userTypedText[charIndex] !== ' ') {
-                break; // 공백도 정확해야 함
-            }
-            charIndex++;
-        }
-    }
-    
-    return completedWords;
-}
 
-// 단어 단위 진행률 기반 점수 계산
-function calculateProgressScore() {
-    if (!currentText || !userTypedText) return;
-    
-    // 텍스트를 단어 단위로 분할 (공백 기준) 및 빈 문자열 제거
-    const words = currentText.split(' ').filter(word => word.trim() !== '');
-    
 
-    
-    for (let wordIndex = 0; wordIndex < words.length; wordIndex++) {
-        const word = words[wordIndex];
-        
-        // 이미 점수를 받은 단어는 건너뛰기
-        if (wordIndex <= lastScoredWordIndex) continue;
-        
-        // 현재 단어의 위치를 텍스트에서 찾기
-        let searchStartIndex = 0;
-        for (let i = 0; i < wordIndex; i++) {
-            const prevWordIndex = currentText.indexOf(words[i], searchStartIndex);
-            if (prevWordIndex !== -1) {
-                searchStartIndex = prevWordIndex + words[i].length + 1; // +1 for space
-            }
-        }
-        
-        const wordStartIndex = currentText.indexOf(word, searchStartIndex);
-        if (wordStartIndex === -1) continue; // 단어를 찾을 수 없으면 건너뛰기
-        
-        const wordEndIndex = wordStartIndex + word.length;
-        const isLastWord = wordIndex === words.length - 1;
-        
-        // 단어 완료 조건 확인
-        let wordComplete = false;
-        
-        if (isLastWord) {
-            // 마지막 단어: 정확히 타이핑되면 완료
-            wordComplete = (userTypedText.length >= wordEndIndex && 
-                           userTypedText.substring(wordStartIndex, wordEndIndex) === word);
-        } else {
-            // 마지막 단어가 아님: 단어 + 공백까지 타이핑되면 완료
-            wordComplete = (userTypedText.length > wordEndIndex && 
-                           userTypedText.substring(wordStartIndex, wordEndIndex) === word &&
-                           userTypedText[wordEndIndex] === ' ');
-        }
-        
-        if (wordComplete) {
-            // 단어별 점수 계산
-            const wordScore = calculateWordScore(word, word);
-            accumulatedScore += wordScore;
-            
-            // 완료된 단어 정보 저장
-            completedWords.push({
-                wordIndex: wordIndex,
-                word: word,
-                score: wordScore,
-                completedAt: Date.now()
-            });
-            
-            lastScoredWordIndex = wordIndex;
-            console.log(`단어 "${word}" 완료! 점수: ${wordScore}, 총 누적: ${accumulatedScore}`);
-        }
-    }
-}
 
-// 개별 단어의 점수 계산 함수
-function calculateWordScore(originalWord, typedWord) {
-    if (!originalWord || originalWord.trim() === '') return 0;
-    
-    // 단어 길이에 비례하는 기본 점수
-    const baseScore = originalWord.length * 3; // 글자당 3점
-    
-    // 정확도 계산
-    let correctChars = 0;
-    for (let i = 0; i < Math.min(originalWord.length, typedWord.length); i++) {
-        if (originalWord[i] === typedWord[i]) {
-            correctChars++;
-        }
-    }
-    
-    const accuracy = originalWord.length > 0 ? correctChars / originalWord.length : 0;
-    
-    // 정확도에 따른 점수 조정
-    const finalScore = Math.round(baseScore * accuracy * accuracy); // 정확도 제곱으로 보너스
-    
-    return Math.max(1, finalScore); // 최소 1점
-}
 
-// 마지막 미완성 단어의 부분 점수 계산
-function calculateFinalPartialScore() {
-    if (!userTypedText || !currentText) return;
-    
-    const words = currentText.split(' ');
-    let textIndex = 0;
-    
-    // 마지막으로 타이핑 중인 단어 찾기
-    for (let wordIndex = 0; wordIndex < words.length; wordIndex++) {
-        const word = words[wordIndex];
-        
-        // 이미 점수를 받은 단어는 건너뛰기
-        if (wordIndex <= lastScoredWordIndex) {
-            textIndex += word.length + 1;
-            continue;
-        }
-        
-        const wordStartIndex = textIndex;
-        const wordEndIndex = textIndex + word.length;
-        
-        // 현재 타이핑 중인 단어가 있는지 확인
-        if (userTypedText.length > wordStartIndex && userTypedText.length <= wordEndIndex) {
-            const partialTypedWord = userTypedText.substring(wordStartIndex);
-            
-            // 부분 점수 계산
-            let correctChars = 0;
-            for (let i = 0; i < Math.min(word.length, partialTypedWord.length); i++) {
-                if (word[i] === partialTypedWord[i]) {
-                    correctChars++;
-                }
-            }
-            
-            if (correctChars > 0) {
-                const partialScore = Math.round(correctChars * 1.5); // 글자당 1.5점 (부분 점수)
-                accumulatedScore += partialScore;
-                console.log(`미완성 단어 "${word}" 부분 점수: ${partialScore} (${correctChars}글자 정확)`);
-            }
-            break;
-        }
-        
-        textIndex += word.length + 1;
-    }
-}
+
+
 
 function endPractice() {
     // 타이머 정리
@@ -772,13 +604,10 @@ function endPractice() {
     elements.timer.textContent = '0:00';
     elements.timer.style.color = 'var(--bs-danger)';
     
-    // 마지막 미완성 단어도 점수 계산 (부분 점수)
-    calculateFinalPartialScore();
-    
     // 최종 통계 계산
     updateStats();
     
-    console.log(`연습 완료! 최종 누적 점수: ${accumulatedScore}, 완료된 단어 수: ${completedWords.length}`);
+    console.log(`연습 완료! 최종 점수: ${currentScore}`);
     
     // 연습 완료 효과음 재생
     playCompleteSound();
