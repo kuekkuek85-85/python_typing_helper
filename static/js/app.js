@@ -185,6 +185,18 @@ function setupEventListeners() {
     if (elements.userInput) {
         elements.userInput.addEventListener('input', handleUserInput);
         elements.userInput.addEventListener('keydown', handleKeyDown);
+        
+        // 복사/붙여넣기 방지
+        elements.userInput.addEventListener('paste', function(event) {
+            event.preventDefault();
+            showCopyPasteWarning('붙여넣기');
+        });
+        
+        // 우클릭 메뉴 방지
+        elements.userInput.addEventListener('contextmenu', function(event) {
+            event.preventDefault();
+            showCopyPasteWarning('우클릭 메뉴');
+        });
     }
     
     // 학생 ID 입력 검증
@@ -411,6 +423,37 @@ function confirmLanguageAndStart() {
     actuallyStartPractice();
 }
 
+// 복사/붙여넣기 경고 메시지 표시
+function showCopyPasteWarning(action) {
+    // 기존 경고 메시지가 있다면 제거
+    const existingWarning = document.getElementById('copyPasteWarning');
+    if (existingWarning) {
+        existingWarning.remove();
+    }
+    
+    // 경고 메시지 생성
+    const warningDiv = document.createElement('div');
+    warningDiv.id = 'copyPasteWarning';
+    warningDiv.className = 'alert alert-warning alert-dismissible fade show mt-2';
+    warningDiv.innerHTML = `
+        <i class="bi bi-exclamation-triangle"></i>
+        <strong>${action} 기능이 비활성화되었습니다!</strong>
+        타자 연습에서는 직접 타이핑해야 합니다.
+        <button type="button" class="btn-close" onclick="document.getElementById('copyPasteWarning').remove()"></button>
+    `;
+    
+    // 입력창 아래에 경고 메시지 삽입
+    const inputContainer = elements.userInput.parentNode;
+    inputContainer.appendChild(warningDiv);
+    
+    // 3초 후 자동으로 사라짐
+    setTimeout(() => {
+        if (document.getElementById('copyPasteWarning')) {
+            document.getElementById('copyPasteWarning').remove();
+        }
+    }, 3000);
+}
+
 // 실제 연습 시작 함수
 function actuallyStartPractice() {
     if (isTimerRunning) return;
@@ -488,6 +531,13 @@ function handleKeyDown(event) {
     // 첫 번째 키 입력 시 오디오 컨텍스트 활성화
     if (audioContext && audioContext.state === 'suspended') {
         audioContext.resume();
+    }
+    
+    // Ctrl+C, Ctrl+V 복사/붙여넣기 방지
+    if (event.ctrlKey && (event.key === 'c' || event.key === 'v' || event.key === 'C' || event.key === 'V')) {
+        event.preventDefault();
+        showCopyPasteWarning(event.key.toLowerCase() === 'c' ? '복사' : '붙여넣기');
+        return;
     }
     
     // Caps Lock 키 처리
