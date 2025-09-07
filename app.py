@@ -470,21 +470,25 @@ def recalculate_wpm():
 # 데이터베이스 테이블 생성
 with app.app_context():
     try:
-        db.create_all()
-        logging.info("데이터베이스 테이블이 성공적으로 생성되었습니다.")
+        # DATABASE_URL이 설정되어 있는지 확인
+        if not database_url:
+            logging.warning("DATABASE_URL이 설정되지 않았습니다.")
+        else:
+            db.create_all()
+            logging.info("데이터베이스 테이블이 성공적으로 생성되었습니다.")
         
-        # 테스트 데이터 추가 (개발용)
-        if Record.query.count() == 0:
-            test_records = [
-                {'student_id': '10130 홍길동', 'mode': '자리', 'wpm': 45, 'accuracy': 92.5, 'score': 370, 'duration_sec': 300},
-                {'student_id': '10215 김영희', 'mode': '자리', 'wpm': 38, 'accuracy': 96.0, 'score': 350, 'duration_sec': 300},
-                {'student_id': '10302 박철수', 'mode': '자리', 'wpm': 52, 'accuracy': 89.2, 'score': 415, 'duration_sec': 300}
-            ]
-            for record_data in test_records:
-                record = Record(**record_data)
-                db.session.add(record)
-            db.session.commit()
-            logging.info("테스트 데이터가 추가되었습니다.")
+            # 테스트 데이터 추가 (개발용)
+            if Record.query.count() == 0:
+                test_records = [
+                    {'student_id': '10130 홍길동', 'mode': '자리', 'wpm': 45, 'accuracy': 92.5, 'score': 370, 'duration_sec': 300},
+                    {'student_id': '10215 김영희', 'mode': '자리', 'wpm': 38, 'accuracy': 96.0, 'score': 350, 'duration_sec': 300},
+                    {'student_id': '10302 박철수', 'mode': '자리', 'wpm': 52, 'accuracy': 89.2, 'score': 415, 'duration_sec': 300}
+                ]
+                for record_data in test_records:
+                    record = Record(**record_data)
+                    db.session.add(record)
+                db.session.commit()
+                logging.info("테스트 데이터가 추가되었습니다.")
             
     except Exception as e:
         logging.error(f"데이터베이스 테이블 생성 실패: {e}")
