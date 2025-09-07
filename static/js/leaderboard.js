@@ -193,10 +193,10 @@ class Leaderboard {
         accuracyCell.className = 'text-center';
         accuracyCell.innerHTML = `<span class="text-success">${record.accuracy.toFixed(1)}%</span>`;
         
-        // 연습 시간 셀
-        const durationCell = document.createElement('td');
-        durationCell.className = 'text-center';
-        durationCell.textContent = this.formatDuration(record.duration_sec);
+        // 연습 시간 셀 (숨김 처리)
+        // const durationCell = document.createElement('td');
+        // durationCell.className = 'text-center';
+        // durationCell.textContent = this.formatDuration(record.duration_sec);
         
         // 기록 일시 셀
         const dateCell = document.createElement('td');
@@ -209,7 +209,7 @@ class Leaderboard {
         row.appendChild(scoreCell);
         row.appendChild(wpmCell);
         row.appendChild(accuracyCell);
-        row.appendChild(durationCell);
+        // row.appendChild(durationCell); // 연습 시간 열 숨김
         row.appendChild(dateCell);
         
         return row;
