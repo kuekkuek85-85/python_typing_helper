@@ -1,4 +1,4 @@
-# PRD – Replit 기반 파이썬 타자 도우미 웹사이트
+# PRD – GitHub Pages 기반 파이썬 타자 도우미 웹사이트
 작성일: 2025-08-18
 버전: 1.0
 작성자: (정보 교과) 이승엽 교사 팀
@@ -12,7 +12,7 @@
 ## 2) 대상 & 환경
 - **대상**: 중학교 1학년(프로그래밍 초심자)
 - **수업 맥락**: 정보 교과, 파이썬 기초 단원
-- **플랫폼/스택**: Replit · Flask(백엔드) · HTML/CSS/JS(프런트) · Supabase(PostgreSQL)
+- **플랫폼/스택**: GitHub Pages · 정적 HTML/CSS/JS · Supabase JavaScript SDK · PostgreSQL
 - **로그인 정책(학생)**: 로그인 없음(저장 시 학번+이름만 제출)
 
 ## 3) 학습 범위(토큰/키워드)
@@ -27,7 +27,7 @@
 
 ## 4) 핵심 사용자 스토리
 - **학생**: "모드(자리/낱말/문장/문단)를 선택→ 5분 동안 타자 → 시간이 끝나면 결과 확인 → 학번+이름(형식 유효) 입력 → 기록 저장 → 명예의 전당 확인"
-- **교사**: "우측 상단 '교사 로그인'(admin/admin) → 관리자 모드 → 기능별 대시보드에서 기록 **검색/확인/수정/삭제**"
+- **교사**: "우측 상단 '교사 로그인'(admin/admin) → 관리자 모드 → 기능별 대시보드에서 기록 **검색/확인** (localStorage 기반 세션)"
 
 ## 5) 기능 사양
 ### 5.1 모드(4단계, 각 5분)
@@ -39,9 +39,9 @@
 
 ### 5.2 기록 저장(학생 입력 조건)
 - 입력창 placeholder(hint): **"학번 이름 (예: 10218 홍길동)"**
-- **유효성(프런트·백엔드 동시 검증)**: `^\d{5}\s[가-힣]{2,4}$`
+- **유효성(클라이언트 사이드 검증)**: `^\d{5}\s[가-힣]{2,4}$`
 - 저장 필드: `student_id(문자열)`, `mode`, `wpm`, `accuracy`, `score`, `duration_sec`, `created_at`
-- **서버 검증**: `duration_sec < 300` 인 경우 **저장 거부**(조기 종료 방지)
+- **클라이언트 검증**: `duration_sec < 300` 인 경우 **저장 거부**(조기 종료 방지)
 
 ### 5.3 측정/채점
 - **WPM**: 표준 5자=1단어, 공백/기호 포함. 실시간 집계.
@@ -51,29 +51,28 @@
 
 ### 5.4 명예의 전당(대시보드)
 - **표시 기본**: **Top 10** (정렬: `score desc → accuracy desc → wpm desc → created_at asc`)
-- **더 보기**: 10개씩 추가 로드(`limit=10&offset=…`), 또는 전체 보기 토글
-- **검색**: 상단 검색바(부분 일치, 대소문자 무시) → `student_id` 컬럼 ilike '%q%'
+- **더 보기**: JavaScript에서 10개씩 추가 로드(Supabase limit/offset), 또는 전체 보기 토글
+- **검색**: 상단 검색바(부분 일치, 대소문자 무시) → Supabase JavaScript SDK ilike 쿼리
 - **뷰 탭**: 자리 / 낱말 / 문장 / 문단
-- **관리자 모드 UI**: 각 행에 **수정/삭제** 아이콘 노출
+- **관리자 모드 UI**: 로그인 상태 확인 및 기록 조회 기능
 
 ### 5.5 교사 관리자 모드
 - **버튼**: 화면 우측 상단 "교사 로그인"
 - **자격 증명**: `admin / admin` (환경변수로 변경 가능)
-- **권한**: 기능별 대시보드의 기록 **수정(PATCH)/삭제(DELETE)**
-- **세션**: 로그인 성공 시 간단 토큰(세션 스토리지) → API 헤더 전송
+- **권한**: 기능별 대시보드의 기록 **조회 및 분석**
+- **세션**: 로그인 성공 시 localStorage에 세션 정보 저장
 
 ## 6) 화면 흐름(IA/UX 개요)
 - 홈 → 모드 선택 → 연습 화면(문제·입력·타이머·오타 강조) → 결과(속도/정확도/점수) → **학번+이름 입력 폼** → 저장 완료 → 명예의 전당
 - 상단 고정 탭: 자리/낱말/문장/문단
 - 우측 상단: **교사 로그인** 버튼
 
-## 7) API 사양(Flask)
-- `GET /api/records/top?mode={mode}` → Top10, 총합 반환
-- `GET /api/records?mode={m}&limit=10&offset=0&search={q}` → 페이지네이션(검색 포함)
-- `POST /api/records` → 저장(본문: 측정치 + student_id + mode + duration_sec)  
-  - 서버: `student_id` 정규식 검증, `duration_sec >= 300` 검증
-- (관리자) `PATCH /api/records/{id}`, `DELETE /api/records/{id}`  
-  - 헤더 토큰 필수
+## 7) 데이터베이스 연동 사양(Supabase JavaScript SDK)
+- `supabase.from('records').select().eq('mode', mode).order().limit()` → Top10, 총합 반환
+- `supabase.from('records').select().eq().order().range()` → 페이지네이션
+- `supabase.from('records').insert()` → 저장(측정치 + student_id + mode + duration_sec)
+  - 클라이언트: `student_id` 정규식 검증, `duration_sec >= 300` 검증
+- 직접 데이터베이스 연결로 실시간 데이터 동기화
 
 ## 8) 데이터 모델 & 인덱스(Supabase)
 ```sql
