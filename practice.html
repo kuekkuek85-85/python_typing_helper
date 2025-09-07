@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="ko" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title id="page-title">자리 연습 - 파이썬 타자 도우미</title>
+    <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="static/css/custom.css" rel="stylesheet">
+</head>
+<body>
+    <!-- 상단 네비게이션 -->
+    <nav class="navbar navbar-expand-lg">
+        <div class="container">
+            <a href="index.html" class="navbar-brand">
+                <i class="bi bi-arrow-left"></i>
+                파이썬 타자 도우미
+            </a>
+            <div class="d-flex align-items-center">
+                <span class="badge bg-primary me-3" id="mode-badge">
+                    ⌨️ 자리 연습
+                </span>
+                <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#teacherLoginModal">
+                    <i class="bi bi-person-gear"></i>
+                    교사 로그인
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 메인 컨텐츠 -->
+    <div class="container mt-4">
+        <!-- 연습 상태 표시 -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="row text-center">
+                            <div class="col-md-3">
+                                <h3 class="mb-1" id="timer">5:00</h3>
+                                <small class="text-muted">남은 시간</small>
+                            </div>
+                            <div class="col-md-3">
+                                <h3 class="mb-1" id="wpm">0</h3>
+                                <small class="text-muted">분당 타수</small>
+                            </div>
+                            <div class="col-md-3">
+                                <h3 class="mb-1" id="accuracy">100%</h3>
+                                <small class="text-muted">정확도</small>
+                            </div>
+                            <div class="col-md-3">
+                                <h3 class="mb-1" id="score">0</h3>
+                                <small class="text-muted">점수</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 연습 영역 -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0" id="practice-title">
+                            ⌨️ 자리 연습
+                        </h5>
+                        <small class="text-muted" id="practice-description">파이썬 키워드와 키보드를 연습하세요</small>
+                    </div>
+                    <div class="card-body">
+                        <!-- 문제 텍스트 표시 영역 -->
+                        <div class="practice-text-container mb-4">
+                            <div id="practiceText" class="practice-text">
+                                연습 텍스트를 불러오는 중...
+                            </div>
+                        </div>
+
+                        <!-- 가상 키보드 -->
+                        <div class="virtual-keyboard mb-4">
+                            <div class="keyboard-row">
+                                <div class="key" data-key="`">~<br>`</div>
+                                <div class="key" data-key="1">!<br>1</div>
+                                <div class="key" data-key="2">@<br>2</div>
+                                <div class="key" data-key="3">#<br>3</div>
+                                <div class="key" data-key="4">$<br>4</div>
+                                <div class="key" data-key="5">%<br>5</div>
+                                <div class="key" data-key="6">^<br>6</div>
+                                <div class="key" data-key="7">&<br>7</div>
+                                <div class="key" data-key="8">*<br>8</div>
+                                <div class="key" data-key="9">(<br>9</div>
+                                <div class="key" data-key="0">)<br>0</div>
+                                <div class="key" data-key="-">_<br>-</div>
+                                <div class="key" data-key="+">+<br>=</div>
+                                <div class="key key-wide" data-key="Backspace">Backspace</div>
+                            </div>
+                            <div class="keyboard-row">
+                                <div class="key key-wide" data-key="Tab">Tab</div>
+                                <div class="key" data-key="q"><span class="key-letter">q</span></div>
+                                <div class="key" data-key="w"><span class="key-letter">w</span></div>
+                                <div class="key" data-key="e"><span class="key-letter">e</span></div>
+                                <div class="key" data-key="r"><span class="key-letter">r</span></div>
+                                <div class="key" data-key="t"><span class="key-letter">t</span></div>
+                                <div class="key" data-key="y"><span class="key-letter">y</span></div>
+                                <div class="key" data-key="u"><span class="key-letter">u</span></div>
+                                <div class="key" data-key="i"><span class="key-letter">i</span></div>
+                                <div class="key" data-key="o"><span class="key-letter">o</span></div>
+                                <div class="key" data-key="p"><span class="key-letter">p</span></div>
+                                <div class="key" data-key="[">{<br>[</div>
+                                <div class="key" data-key="]">}<br>]</div>
+                                <div class="key key-wide" data-key="\\">|<br>\</div>
+                            </div>
+                            <div class="keyboard-row">
+                                <div class="key key-wide" data-key="CapsLock">Caps Lock</div>
+                                <div class="key" data-key="a"><span class="key-letter">a</span></div>
+                                <div class="key" data-key="s"><span class="key-letter">s</span></div>
+                                <div class="key" data-key="d"><span class="key-letter">d</span></div>
+                                <div class="key" data-key="f"><span class="key-letter">f</span></div>
+                                <div class="key" data-key="g"><span class="key-letter">g</span></div>
+                                <div class="key" data-key="h"><span class="key-letter">h</span></div>
+                                <div class="key" data-key="j"><span class="key-letter">j</span></div>
+                                <div class="key" data-key="k"><span class="key-letter">k</span></div>
+                                <div class="key" data-key="l"><span class="key-letter">l</span></div>
+                                <div class="key" data-key=";">:<br>;</div>
+                                <div class="key" data-key="'">"<br>'</div>
+                                <div class="key key-wide" data-key="Enter">Enter</div>
+                            </div>
+                            <div class="keyboard-row">
+                                <div class="key key-wide" data-key="Shift">Shift</div>
+                                <div class="key" data-key="z"><span class="key-letter">z</span></div>
+                                <div class="key" data-key="x"><span class="key-letter">x</span></div>
+                                <div class="key" data-key="c"><span class="key-letter">c</span></div>
+                                <div class="key" data-key="v"><span class="key-letter">v</span></div>
+                                <div class="key" data-key="b"><span class="key-letter">b</span></div>
+                                <div class="key" data-key="n"><span class="key-letter">n</span></div>
+                                <div class="key" data-key="m"><span class="key-letter">m</span></div>
+                                <div class="key" data-key=","><<br>,</div>
+                                <div class="key" data-key=".">><br>.</div>
+                                <div class="key" data-key="/">?<br>/</div>
+                                <div class="key key-wide" data-key="Shift">Shift</div>
+                            </div>
+                            <div class="keyboard-row">
+                                <div class="key key-wide" data-key="Control">Ctrl</div>
+                                <div class="key" data-key="Meta">⊞</div>
+                                <div class="key" data-key="Alt">Alt</div>
+                                <div class="key key-space" data-key=" ">Space</div>
+                                <div class="key" data-key="Alt">Alt</div>
+                                <div class="key" data-key="Meta">⊞</div>
+                                <div class="key" data-key="ContextMenu">☰</div>
+                                <div class="key key-wide" data-key="Control">Ctrl</div>
+                            </div>
+                        </div>
+
+                        <!-- 입력 영역 -->
+                        <div class="mb-3">
+                            <label for="userInput" class="form-label">여기에 입력하세요:</label>
+                            <textarea 
+                                class="form-control practice-input" 
+                                id="userInput" 
+                                rows="2" 
+                                placeholder="연습을 시작하려면 여기에 타이핑을 시작하세요..."
+                                disabled>
+                            </textarea>
+                        </div>
+
+                        <!-- 제어 버튼 -->
+                        <div class="d-flex justify-content-between align-items-center">
+                            <button id="startBtn" class="btn btn-success btn-lg">
+                                <i class="bi bi-play-fill"></i>
+                                연습 시작
+                            </button>
+                            <button id="resetBtn" class="btn btn-outline-secondary">
+                                <i class="bi bi-arrow-clockwise"></i>
+                                다시 시작
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 도움말 섹션 -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body">
+                        <h6 class="card-title">
+                            <i class="bi bi-info-circle"></i>
+                            연습 안내
+                        </h6>
+                        <ul class="mb-0 text-muted">
+                            <li>연습은 5분간 진행됩니다</li>
+                            <li>시간이 끝나야만 결과를 저장할 수 있습니다</li>
+                            <li>정확도와 속도가 모두 점수에 반영됩니다</li>
+                            <li>오타는 빨간색으로 표시됩니다</li>
+                            <li>복사/붙여넣기는 차단됩니다</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 푸터 -->
+    <footer class="mt-5 py-4 border-top">
+        <div class="container text-center text-muted">
+            <p>&copy; 2025 파이썬 타자연습. 중학교 1학년 정보 교과를 위한 학습 도구입니다.</p>
+        </div>
+    </footer>
+
+    <!-- 연습 완료 모달 -->
+    <div class="modal fade" id="completeModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-trophy"></i>
+                        연습 완료!
+                    </h5>
+                </div>
+                <div class="modal-body">
+                    <!-- 결과 표시 -->
+                    <div class="row text-center mb-4">
+                        <div class="col-4">
+                            <h3 id="finalWpm" class="text-primary">0</h3>
+                            <small class="text-muted">분당 타수</small>
+                        </div>
+                        <div class="col-4">
+                            <h3 id="finalAccuracy" class="text-success">100%</h3>
+                            <small class="text-muted">정확도</small>
+                        </div>
+                        <div class="col-4">
+                            <h3 id="finalScore" class="text-warning">0</h3>
+                            <small class="text-muted">점수</small>
+                        </div>
+                    </div>
+                    
+                    <hr>
+                    
+                    <!-- 학생 정보 입력 -->
+                    <div class="mb-3">
+                        <label for="studentId" class="form-label">
+                            <i class="bi bi-person"></i>
+                            학번과 이름을 입력하세요
+                        </label>
+                        <input 
+                            type="text" 
+                            class="form-control" 
+                            id="studentId" 
+                            placeholder="학번 이름 (예: 10218 홍길동)"
+                            maxlength="20">
+                        <div class="form-text">5자리 학번 + 공백 + 한글 이름 (2-4글자)</div>
+                        <div id="studentIdError" class="text-danger mt-1" style="display: none;"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        나중에 저장
+                    </button>
+                    <button type="button" class="btn btn-success" id="saveRecordBtn" disabled>
+                        <i class="bi bi-save"></i>
+                        기록 저장
+                    </button>
+                    <a href="index.html" class="btn btn-primary">
+                        <i class="bi bi-house"></i>
+                        홈으로
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 저장 성공 모달 -->
+    <div class="modal fade" id="saveSuccessModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-check-circle text-success"></i>
+                        저장 완료!
+                    </h5>
+                </div>
+                <div class="modal-body text-center">
+                    <p class="mb-3">기록이 성공적으로 저장되었습니다!</p>
+                    <p class="text-muted">명예의 전당에서 순위를 확인해보세요.</p>
+                </div>
+                <div class="modal-footer justify-content-center">
+                    <a href="index.html" class="btn btn-primary">
+                        <i class="bi bi-house"></i>
+                        홈으로 이동
+                    </a>
+                    <button type="button" class="btn btn-success" onclick="location.reload()">
+                        <i class="bi bi-arrow-clockwise"></i>
+                        다시 연습
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 교사 로그인 모달 -->
+    <div class="modal fade" id="teacherLoginModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">교사 로그인</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="teacherLoginForm">
+                        <div class="mb-3">
+                            <label for="adminUser" class="form-label">사용자명</label>
+                            <input type="text" class="form-control" id="adminUser" value="admin" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="adminPass" class="form-label">비밀번호</label>
+                            <input type="password" class="form-control" id="adminPass" value="admin" required>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>
+                    <button type="button" class="btn btn-primary" onclick="loginAdmin()">로그인</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Supabase JavaScript SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <!-- Custom JavaScript -->
+    <script src="static/js/config.js"></script>
+    <script src="static/js/database.js"></script>
+    <script src="static/js/practice.js"></script>
+</body>
+</html>

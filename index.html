@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ko" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>파이썬 타자 도우미 - Python Typing Helper</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    
+    <!-- 사용자 정의 CSS -->
+    <link href="static/css/custom.css" rel="stylesheet">
+</head>
+<body>
+    <!-- 네비게이션 바 -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand fw-bold" href="index.html">
+                <i class="bi bi-code-slash"></i>
+                파이썬 타자 도우미
+            </a>
+            
+            <div class="navbar-nav ms-auto">
+                <button class="btn btn-outline-light btn-sm" data-bs-toggle="modal" data-bs-target="#teacherLoginModal">
+                    <i class="bi bi-person-gear"></i>
+                    교사 로그인
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 메인 컨텐츠 -->
+    <div class="container mt-4">
+        <!-- 헤더 섹션 -->
+        <div class="text-center mb-5">
+            <h1 class="display-4 mb-3">
+                <i class="bi bi-keyboard text-primary"></i>
+                파이썬 타자 도우미
+            </h1>
+            <p class="lead text-muted">
+                중학교 1학년을 위한 파이썬 프로그래밍 타자연습 플랫폼<br>
+                정확하고 빠른 코딩을 위한 기초 타이핑 실력을 기르세요!
+            </p>
+        </div>
+
+        <!-- 연습 모드 카드 -->
+        <div class="row g-4 mb-5" id="practice-modes">
+            <!-- JavaScript로 동적 생성 -->
+        </div>
+
+        <!-- 명예의 전당 섹션 -->
+        <div class="mt-5">
+            <div class="row">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h5 class="mb-0">
+                                    <i class="bi bi-trophy text-warning"></i>
+                                    명예의 전당
+                                </h5>
+                                <button type="button" class="btn btn-outline-primary btn-sm" id="viewToggleBtn">
+                                    <i class="bi bi-list"></i> 전체 보기
+                                </button>
+                            </div>
+                            
+                            <!-- 모드 선택 탭 -->
+                            <ul class="nav nav-tabs card-header-tabs" id="modeTab" role="tablist">
+                                <!-- JavaScript로 동적 생성 -->
+                            </ul>
+                        </div>
+                        
+                        <div class="card-body">
+                            <div class="tab-content" id="modeTabContent">
+                                <!-- JavaScript로 동적 생성 -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 푸터 -->
+    <footer class="mt-5 py-4 border-top">
+        <div class="container text-center text-muted">
+            <p>&copy; 2025 파이썬 타자연습. 중학교 1학년 정보 교과를 위한 학습 도구입니다.</p>
+        </div>
+    </footer>
+
+    <!-- 추후 제공 예정 모달 -->
+    <div class="modal fade" id="comingSoonModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-clock text-warning"></i>
+                        추후 제공 예정
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <div class="mb-4">
+                        <i class="bi bi-tools text-muted" style="font-size: 3rem;"></i>
+                    </div>
+                    <h6>해당 연습 모드는 현재 개발 중입니다</h6>
+                    <p class="text-muted">
+                        낱말, 문장, 문단 연습 모드는 곧 업데이트될 예정입니다.<br>
+                        현재는 <strong>자리 연습</strong> 모드를 이용해주세요!
+                    </p>
+                </div>
+                <div class="modal-footer justify-content-center">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-circle"></i>
+                        닫기
+                    </button>
+                    <a href="practice.html?mode=자리" class="btn btn-primary">
+                        <i class="bi bi-play-fill"></i>
+                        자리 연습하기
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 교사 로그인 모달 -->
+    <div class="modal fade" id="teacherLoginModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">교사 로그인</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="teacherLoginForm">
+                        <div class="mb-3">
+                            <label for="adminUser" class="form-label">사용자명</label>
+                            <input type="text" class="form-control" id="adminUser" value="admin" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="adminPass" class="form-label">비밀번호</label>
+                            <input type="password" class="form-control" id="adminPass" value="admin" required>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>
+                    <button type="button" class="btn btn-primary" onclick="loginAdmin()">로그인</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Supabase JavaScript SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <!-- Custom JavaScript -->
+    <script src="static/js/config.js"></script>
+    <script src="static/js/database.js"></script>
+    <script src="static/js/main.js"></script>
+</body>
+</html>
