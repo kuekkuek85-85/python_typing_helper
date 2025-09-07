@@ -1,8 +1,8 @@
 // Supabase 클라이언트 설정
 // 환경변수는 여기서 직접 설정해야 합니다 (GitHub Pages에서는 runtime 환경변수를 사용할 수 없음)
 const SUPABASE_CONFIG = {
-    url: 'YOUR_SUPABASE_URL', // Supabase 프로젝트 URL
-    key: 'YOUR_SUPABASE_ANON_KEY' // Supabase anon key
+    url: 'https://xwkhjytuytufctdogdou.supabase.co', // Supabase 프로젝트 URL
+    key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh3a2hqeXR1eXR1ZmN0ZG9nZG91Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU1MjM5ODUsImV4cCI6MjA3MTA5OTk4NX0.HGQGn0cbHg5K4mqGTUTuSIA4IcGwVALNODjOWhI07k8' // Supabase anon key
 };
 
 // 개발 모드 확인 (localhost 또는 file://)
