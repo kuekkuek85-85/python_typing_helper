@@ -1,7 +1,10 @@
 import os
 import logging
 import re
-from datetime import datetime
+import time
+import secrets
+import hashlib
+from datetime import datetime, timedelta
 import pytz
 from flask import Flask, render_template, request, jsonify, session
 from flask_sqlalchemy import SQLAlchemy
@@ -53,6 +56,11 @@ db.init_app(app)
 # 관리자 계정 설정
 ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
 ADMIN_PASS = os.environ.get("ADMIN_PASS", "admin")
+
+# 보안 설정
+RATE_LIMIT_WINDOW = 300  # 5분 창
+MAX_SUBMISSIONS_PER_WINDOW = 3  # 5분당 최대 3번 제출
+submission_log = {}  # {student_id: [(timestamp, ip), ...]}
 
 # 학생 ID 검증용 정규식
 ID_PATTERN = re.compile(r"^\d{5}\s[가-힣]{2,4}$")
@@ -141,8 +149,14 @@ def practice(mode):
     if mode not in PRACTICE_MODES:
         return "잘못된 연습 모드입니다.", 404
     
+    # 보안 토큰 생성 및 세션에 저장
+    practice_token = secrets.token_urlsafe(32)
+    session['practice_token'] = practice_token
+    session['practice_start_time'] = time.time()
+    session['practice_mode'] = mode
+    
     mode_info = PRACTICE_MODES[mode]
-    return render_template('practice.html', mode=mode, mode_info=mode_info)
+    return render_template('practice.html', mode=mode, mode_info=mode_info, practice_token=practice_token)
 
 
 
