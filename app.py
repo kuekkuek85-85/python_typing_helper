@@ -177,16 +177,72 @@ def health():
     }
     return jsonify(status)
 
-# API 엔드포인트 - 기록 저장
+# 보안 헬퍼 함수
+def check_rate_limit(student_id, client_ip):
+    """학생별 제출 빈도 제한 검사"""
+    current_time = time.time()
+    
+    # 오래된 로그 정리
+    if student_id in submission_log:
+        submission_log[student_id] = [
+            (timestamp, ip) for timestamp, ip in submission_log[student_id]
+            if current_time - timestamp < RATE_LIMIT_WINDOW
+        ]
+    
+    # 현재 제출 횟수 확인
+    if student_id in submission_log:
+        if len(submission_log[student_id]) >= MAX_SUBMISSIONS_PER_WINDOW:
+            return False
+    
+    # 새 제출 기록
+    if student_id not in submission_log:
+        submission_log[student_id] = []
+    submission_log[student_id].append((current_time, client_ip))
+    
+    return True
+
+def validate_data_integrity(wpm, accuracy, score, duration_sec):
+    """데이터 무결성 검증"""
+    # 기본 범위 검증
+    if not (0 <= accuracy <= 100):
+        return False, '정확도는 0-100% 사이여야 합니다.'
+    
+    if not (0 <= wpm <= 500):
+        return False, '분당 타수는 0-500 사이여야 합니다.'
+    
+    if not (300 <= duration_sec <= 400):  # 5분 연습 + 약간의 오차 허용
+        return False, '연습 시간이 비정상입니다.'
+    
+    # 점수 계산 공식 검증: score = round(max(0, WPM) * (accuracy/100)^2 * 100)
+    expected_score = round(max(0, wpm) * ((accuracy / 100) ** 2) * 100)
+    score_tolerance = max(1, expected_score * 0.05)  # 5% 오차 허용
+    
+    if abs(score - expected_score) > score_tolerance:
+        return False, f'점수 계산이 비정상입니다. 예상: {expected_score}, 실제: {score}'
+    
+    return True, 'OK'
+
+# API 엔드포인트 - 기록 저장 (보안 강화)
 @app.route('/api/records', methods=['POST'])
 def create_record():
-    """연습 기록 저장"""
+    """연습 기록 저장 - 보안 강화 버전"""
     try:
+        client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR', 'unknown'))
+        
+        # 1. 세션 검증
+        if 'practice_token' not in session or 'practice_start_time' not in session:
+            return jsonify({'error': '유효하지 않은 연습 세션입니다. 다시 연습을 시작해주세요.'}), 401
+        
         data = request.get_json()
         if not data:
             return jsonify({'error': '잘못된 요청 데이터입니다.'}), 400
         
-        # 필수 필드 검증
+        # 2. 토큰 검증
+        provided_token = data.get('practice_token')
+        if not provided_token or provided_token != session.get('practice_token'):
+            return jsonify({'error': '인증 토큰이 일치하지 않습니다.'}), 401
+        
+        # 3. 필수 필드 검증
         required_fields = ['student_id', 'mode', 'wpm', 'accuracy', 'score', 'duration_sec']
         for field in required_fields:
             if field not in data:
@@ -199,19 +255,46 @@ def create_record():
         score = int(data['score'])
         duration_sec = int(data['duration_sec'])
         
-        # 학생 ID 형식 검증
+        # 4. 기본 검증
         if not ID_PATTERN.match(student_id):
             return jsonify({'error': '학번 이름 형식이 올바르지 않습니다. (예: 10218 홍길동)'}), 400
         
-        # 연습 시간 검증 (5분 = 300초)
+        if mode not in PRACTICE_MODES:
+            return jsonify({'error': '올바르지 않은 연습 모드입니다.'}), 400
+            
+        if mode != session.get('practice_mode'):
+            return jsonify({'error': '연습 모드가 세션과 일치하지 않습니다.'}), 400
+        
+        # 5. 타이밍 검증
+        session_start_time = session.get('practice_start_time')
+        if session_start_time is None:
+            return jsonify({'error': '연습 시작 시간을 찾을 수 없습니다.'}), 401
+        
+        current_time = time.time()
+        actual_duration = current_time - session_start_time
+        
+        # 실제 연습 시간과 제출된 시간의 차이 검증 (±15초 오차 허용)
+        if abs(actual_duration - duration_sec) > 15:
+            return jsonify({'error': f'연습 시간이 비정상입니다. 실제: {actual_duration:.1f}초, 제출: {duration_sec}초'}), 400
+        
         if duration_sec < 300:
             return jsonify({'error': '5분 종료 후 저장 가능합니다.'}), 400
         
-        # 모드 검증
-        if mode not in PRACTICE_MODES:
-            return jsonify({'error': '올바르지 않은 연습 모드입니다.'}), 400
+        # 6. Rate Limiting 검사
+        if not check_rate_limit(student_id, client_ip):
+            return jsonify({'error': f'너무 빠른 제출입니다. {RATE_LIMIT_WINDOW//60}분당 최대 {MAX_SUBMISSIONS_PER_WINDOW}번만 제출 가능합니다.'}), 429
         
-        # 새 기록 생성 (한국 시간으로 생성)
+        # 7. 데이터 무결성 검증
+        is_valid, error_msg = validate_data_integrity(wpm, accuracy, score, duration_sec)
+        if not is_valid:
+            return jsonify({'error': error_msg}), 400
+        
+        # 8. Referer 헤더 검증 (옵션)
+        referer = request.headers.get('Referer', '')
+        if referer and not any(domain in referer for domain in [request.host, 'localhost', '127.0.0.1']):
+            logging.warning(f'의심스러운 Referer: {referer}, IP: {client_ip}, Student: {student_id}')
+        
+        # 9. 기록 저장
         new_record = Record()
         new_record.student_id = student_id
         new_record.mode = mode
@@ -219,10 +302,17 @@ def create_record():
         new_record.accuracy = accuracy
         new_record.score = score
         new_record.duration_sec = duration_sec
-        new_record.created_at = get_kst_now()  # 한국 시간 명시적 설정
+        new_record.created_at = get_kst_now()
         
         db.session.add(new_record)
         db.session.commit()
+        
+        # 세션 토큰 무효화 (일회성)
+        session.pop('practice_token', None)
+        session.pop('practice_start_time', None)
+        session.pop('practice_mode', None)
+        
+        logging.info(f'기록 저장 성공: {student_id}, {mode}, {score}점, IP: {client_ip}')
         
         return jsonify({
             'success': True,
@@ -233,7 +323,8 @@ def create_record():
     except ValueError as e:
         return jsonify({'error': '숫자 형식이 올바르지 않습니다.'}), 400
     except Exception as e:
-        logging.error(f"기록 저장 실패: {e}")
+        client_ip_safe = locals().get('client_ip', 'unknown')
+        logging.error(f"기록 저장 실패: {e}, IP: {client_ip_safe}")
         db.session.rollback()
         return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
 

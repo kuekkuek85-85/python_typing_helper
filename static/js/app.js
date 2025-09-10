@@ -937,7 +937,8 @@ function saveRecord() {
         wpm: parseInt(elements.wpm.textContent) || 0,
         accuracy: parseFloat(elements.accuracy.textContent.replace('%', '')) || 0,
         score: parseInt(elements.score.textContent) || 0,
-        duration_sec: 300 // 5분 완료
+        duration_sec: Math.floor(elapsedTime),  // 실제 경과 시간
+        practice_token: window.practiceToken     // 보안 토큰 추가
     };
     
     // API로 저장 요청
