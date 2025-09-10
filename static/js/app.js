@@ -849,6 +849,10 @@ function endPractice() {
     // 연습 완료 효과음 재생
     playCompleteSound();
     
+    // UI 상태 업데이트 (연습 완료 표시)
+    elements.startBtn.innerHTML = '<i class="bi bi-check-circle-fill"></i> 연습 완료!';
+    elements.startBtn.disabled = true;
+    
     // 완료 모달 표시 (효과음 재생 후 약간 지연)
     setTimeout(() => {
         showCompleteModal();
@@ -865,6 +869,19 @@ function showCompleteModal() {
     
     const modal = new bootstrap.Modal(elements.completeModal);
     modal.show();
+    
+    // 모달이 완전히 표시된 후 학번 입력 필드에 포커스
+    elements.completeModal.addEventListener('shown.bs.modal', function() {
+        if (elements.studentId) {
+            elements.studentId.focus();
+            // 입력 필드가 활성화되었음을 명확히 표시
+            elements.studentId.style.borderColor = '#0d6efd';
+            elements.studentId.style.boxShadow = '0 0 0 0.25rem rgba(13, 110, 253, 0.25)';
+        }
+    }, { once: true }); // 한 번만 실행
+    
+    // 모달 표시 확인 로그
+    console.log('5분 연습 완료! 학번과 이름을 입력해주세요.');
 }
 
 function resetPractice() {
