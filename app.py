@@ -224,10 +224,12 @@ def validate_typing_activity(session_id, duration_sec):
     if len(keystrokes) < MIN_KEYSTROKES:
         return False, f'연습이 부족합니다. 최소 {MIN_KEYSTROKES}번 이상 타이핑해주세요.'
     
-    # 타이핑 시간 분산 검사 (너무 짧은 시간에 많은 입력 방지)
+    # 타이핑 시간 분산 검사 (5분 연습 완료 후 추가 시간 고려)
     if len(keystrokes) > 0:
         time_span = keystrokes[-1] - keystrokes[0] if len(keystrokes) > 1 else duration_sec
-        if time_span < duration_sec * 0.7:  # 전체 시간의 70% 이상 타이핑해야 함
+        # 실제 타이핑 시간은 최소 4분(240초) 이상이어야 함 (5분 연습 기준)
+        min_typing_time = 240  # 4분
+        if time_span < min_typing_time:
             return False, '타이핑 패턴이 비정상입니다.'
     
     return True, 'OK'
@@ -241,7 +243,8 @@ def validate_data_integrity(wpm, accuracy, score, duration_sec):
     if not (0 <= wpm <= 500):
         return False, '분당 타수는 0-500 사이여야 합니다.'
     
-    if not (300 <= duration_sec <= 400):  # 5분 연습 + 약간의 오차 허용
+    # 5분 연습 완료 후 학번 입력 시간까지 고려하여 넉넉하게 허용
+    if not (300 <= duration_sec <= 1200):  # 5분~20분 (학번 입력 시간 충분히 고려)
         return False, '연습 시간이 비정상입니다.'
     
     # 현실적인 성능 범위 검사 (중학생 수준)
