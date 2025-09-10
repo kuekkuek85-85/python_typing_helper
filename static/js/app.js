@@ -125,6 +125,19 @@ const elements = {
     saveSuccessModal: document.getElementById('saveSuccessModal')
 };
 
+// 타이핑 활동 기록
+function recordKeystroke() {
+    // 서버에 키스트로크 기록 (비동기로 전송)
+    fetch('/api/keystroke', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timestamp: Date.now() })
+    }).catch(error => {
+        // 조용히 실패 처리 (사용자 경험 방해 안 함)
+        console.log('키스트로크 기록 실패:', error);
+    });
+}
+
 // 페이지 로드 시 초기화
 document.addEventListener('DOMContentLoaded', function() {
     initializePage();
@@ -185,6 +198,9 @@ function setupEventListeners() {
     if (elements.userInput) {
         elements.userInput.addEventListener('input', handleUserInput);
         elements.userInput.addEventListener('keydown', handleKeyDown);
+        
+        // 타이핑 활동 추적
+        elements.userInput.addEventListener('keypress', recordKeystroke);
         
         // 복사/붙여넣기 방지
         elements.userInput.addEventListener('paste', function(event) {

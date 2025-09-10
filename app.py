@@ -61,6 +61,8 @@ ADMIN_PASS = os.environ.get("ADMIN_PASS", "admin")
 RATE_LIMIT_WINDOW = 300  # 5분 창
 MAX_SUBMISSIONS_PER_WINDOW = 3  # 5분당 최대 3번 제출
 submission_log = {}  # {student_id: [(timestamp, ip), ...]}
+typing_sessions = {}  # {session_id: {'keystrokes': [], 'start_time': timestamp}}
+MIN_KEYSTROKES = 200  # 최소 키 입력 수
 
 # 학생 ID 검증용 정규식
 ID_PATTERN = re.compile(r"^\d{5}\s[가-힣]{2,4}$")
@@ -151,9 +153,18 @@ def practice(mode):
     
     # 보안 토큰 생성 및 세션에 저장
     practice_token = secrets.token_urlsafe(32)
+    session_id = secrets.token_urlsafe(16)
     session['practice_token'] = practice_token
+    session['session_id'] = session_id
     session['practice_start_time'] = time.time()
     session['practice_mode'] = mode
+    
+    # 타이핑 세션 초기화
+    typing_sessions[session_id] = {
+        'keystrokes': [],
+        'start_time': time.time(),
+        'token': practice_token
+    }
     
     mode_info = PRACTICE_MODES[mode]
     return render_template('practice.html', mode=mode, mode_info=mode_info, practice_token=practice_token)
@@ -201,6 +212,26 @@ def check_rate_limit(student_id, client_ip):
     
     return True
 
+def validate_typing_activity(session_id, duration_sec):
+    """실제 타이핑 활동 검증"""
+    if session_id not in typing_sessions:
+        return False, '타이핑 세션을 찾을 수 없습니다.'
+    
+    session_data = typing_sessions[session_id]
+    keystrokes = session_data['keystrokes']
+    
+    # 최소 키 입력 수 검사
+    if len(keystrokes) < MIN_KEYSTROKES:
+        return False, f'연습이 부족합니다. 최소 {MIN_KEYSTROKES}번 이상 타이핑해주세요.'
+    
+    # 타이핑 시간 분산 검사 (너무 짧은 시간에 많은 입력 방지)
+    if len(keystrokes) > 0:
+        time_span = keystrokes[-1] - keystrokes[0] if len(keystrokes) > 1 else duration_sec
+        if time_span < duration_sec * 0.7:  # 전체 시간의 70% 이상 타이핑해야 함
+            return False, '타이핑 패턴이 비정상입니다.'
+    
+    return True, 'OK'
+
 def validate_data_integrity(wpm, accuracy, score, duration_sec):
     """데이터 무결성 검증"""
     # 기본 범위 검증
@@ -213,9 +244,16 @@ def validate_data_integrity(wpm, accuracy, score, duration_sec):
     if not (300 <= duration_sec <= 400):  # 5분 연습 + 약간의 오차 허용
         return False, '연습 시간이 비정상입니다.'
     
+    # 현실적인 성능 범위 검사 (중학생 수준)
+    if accuracy > 85 and wpm > 300:  # 비현실적인 고성능
+        return False, '비현실적인 성능입니다.'
+    
+    if accuracy < 50 and wpm > 200:  # 정확도 낮은데 속도 높음
+        return False, '비일반적인 타이핑 패턴입니다.'
+    
     # 점수 계산 공식 검증: score = round(max(0, WPM) * (accuracy/100)^2 * 100)
     expected_score = round(max(0, wpm) * ((accuracy / 100) ** 2) * 100)
-    score_tolerance = max(1, expected_score * 0.05)  # 5% 오차 허용
+    score_tolerance = max(1, expected_score * 0.02)  # 2% 오차로 제한 강화
     
     if abs(score - expected_score) > score_tolerance:
         return False, f'점수 계산이 비정상입니다. 예상: {expected_score}, 실제: {score}'
@@ -284,7 +322,14 @@ def create_record():
         if not check_rate_limit(student_id, client_ip):
             return jsonify({'error': f'너무 빠른 제출입니다. {RATE_LIMIT_WINDOW//60}분당 최대 {MAX_SUBMISSIONS_PER_WINDOW}번만 제출 가능합니다.'}), 429
         
-        # 7. 데이터 무결성 검증
+        # 7. 실제 타이핑 활동 검증
+        session_id = session.get('session_id')
+        if session_id:
+            typing_valid, typing_msg = validate_typing_activity(session_id, duration_sec)
+            if not typing_valid:
+                return jsonify({'error': typing_msg}), 400
+        
+        # 8. 데이터 무결성 검증
         is_valid, error_msg = validate_data_integrity(wpm, accuracy, score, duration_sec)
         if not is_valid:
             return jsonify({'error': error_msg}), 400
@@ -307,10 +352,15 @@ def create_record():
         db.session.add(new_record)
         db.session.commit()
         
-        # 세션 토큰 무효화 (일회성)
+        # 세션 토큰 및 타이핑 데이터 무효화 (일회성)
+        session_id = session.get('session_id')
+        if session_id and session_id in typing_sessions:
+            del typing_sessions[session_id]
+        
         session.pop('practice_token', None)
         session.pop('practice_start_time', None)
         session.pop('practice_mode', None)
+        session.pop('session_id', None)
         
         logging.info(f'기록 저장 성공: {student_id}, {mode}, {score}점, IP: {client_ip}')
         
@@ -326,6 +376,33 @@ def create_record():
         client_ip_safe = locals().get('client_ip', 'unknown')
         logging.error(f"기록 저장 실패: {e}, IP: {client_ip_safe}")
         db.session.rollback()
+        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
+
+# API 엔드포인트 - 키스트로크 기록
+@app.route('/api/keystroke', methods=['POST'])
+def record_keystroke():
+    """타이핑 활동 기록"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': '잘못된 요청입니다.'}), 400
+        
+        session_id = session.get('session_id')
+        if not session_id or session_id not in typing_sessions:
+            return jsonify({'error': '유효하지 않은 세션입니다.'}), 401
+        
+        # 키스트로크 타임스탬프 기록
+        timestamp = time.time()
+        typing_sessions[session_id]['keystrokes'].append(timestamp)
+        
+        # 메모리 절약을 위해 오래된 데이터 정리
+        if len(typing_sessions[session_id]['keystrokes']) > 1000:
+            typing_sessions[session_id]['keystrokes'] = typing_sessions[session_id]['keystrokes'][-500:]
+        
+        return jsonify({'success': True}), 200
+        
+    except Exception as e:
+        logging.error(f"키스트로크 기록 실패: {e}")
         return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
 
 # API 엔드포인트 - 랭킹 조회
