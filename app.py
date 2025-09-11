@@ -62,7 +62,7 @@ RATE_LIMIT_WINDOW = 300  # 5분 창
 MAX_SUBMISSIONS_PER_WINDOW = 3  # 5분당 최대 3번 제출
 submission_log = {}  # {student_id: [(timestamp, ip), ...]}
 typing_sessions = {}  # {session_id: {'keystrokes': [], 'start_time': timestamp}}
-MIN_KEYSTROKES = 200  # 최소 키 입력 수
+MIN_KEYSTROKES = 100  # 최소 키 입력 수
 
 # 학생 ID 검증용 정규식
 ID_PATTERN = re.compile(r"^\d{5}\s[가-힣]{2,4}$")
