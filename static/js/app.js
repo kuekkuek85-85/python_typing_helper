@@ -321,6 +321,9 @@ function startPractice() {
 
 // 한영 키 확인 대화상자 표시
 function showLanguageCheckDialog() {
+    // DOM이 준비되지 않았으면 대기
+    if (!document.getElementById) return;
+    
     // 기존 대화상자가 있으면 제거
     const existingDialog = document.getElementById('languageCheckDialog');
     if (existingDialog) {
@@ -430,6 +433,9 @@ function showLanguageCheckDialog() {
 
 // 한영 키 확인 대화상자 닫기
 function closeLangCheckDialog() {
+    // DOM이 준비되지 않았으면 대기
+    if (!document.getElementById) return;
+    
     const dialog = document.getElementById('languageCheckDialog');
     if (dialog) {
         dialog.remove();
@@ -444,6 +450,9 @@ function confirmLanguageAndStart() {
 
 // 복사/붙여넣기 경고 메시지 표시
 function showCopyPasteWarning(action) {
+    // DOM이 준비되지 않았으면 대기
+    if (!document.getElementById) return;
+    
     // 기존 경고 메시지가 있다면 제거
     const existingWarning = document.getElementById('copyPasteWarning');
     if (existingWarning) {
@@ -458,7 +467,7 @@ function showCopyPasteWarning(action) {
         <i class="bi bi-exclamation-triangle"></i>
         <strong>${action} 기능이 비활성화되었습니다!</strong>
         타자 연습에서는 직접 타이핑해야 합니다.
-        <button type="button" class="btn-close" onclick="document.getElementById('copyPasteWarning').remove()"></button>
+        <button type="button" class="btn-close" onclick="const el = document.getElementById('copyPasteWarning'); if(el) el.remove();"></button>
     `;
     
     // 입력창 아래에 경고 메시지 삽입
@@ -467,8 +476,9 @@ function showCopyPasteWarning(action) {
     
     // 3초 후 자동으로 사라짐
     setTimeout(() => {
-        if (document.getElementById('copyPasteWarning')) {
-            document.getElementById('copyPasteWarning').remove();
+        const warningEl = document.getElementById('copyPasteWarning');
+        if (warningEl) {
+            warningEl.remove();
         }
     }, 3000);
 }
@@ -1059,6 +1069,9 @@ function setInputModeToEnglish() {
 
 // 한글 입력 모드 경고 표시
 function showIMEWarning() {
+    // DOM이 준비되지 않았으면 대기
+    if (!document.getElementById) return;
+    
     // 기존 경고가 있으면 제거
     const existingWarning = document.getElementById('imeWarning');
     if (existingWarning) {
