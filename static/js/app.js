@@ -104,26 +104,8 @@ function playCompleteSound() {
     });
 }
 
-// DOM 요소들
-const elements = {
-    timer: document.getElementById('timer'),
-    wpm: document.getElementById('wpm'),
-    accuracy: document.getElementById('accuracy'),
-    score: document.getElementById('score'),
-    practiceText: document.getElementById('practiceText'),
-    userInput: document.getElementById('userInput'),
-    startBtn: document.getElementById('startBtn'),
-    resetBtn: document.getElementById('resetBtn'),
-    teacherLoginBtn: document.getElementById('teacherLoginBtn'),
-    completeModal: document.getElementById('completeModal'),
-    finalWpm: document.getElementById('finalWpm'),
-    finalAccuracy: document.getElementById('finalAccuracy'),
-    finalScore: document.getElementById('finalScore'),
-    studentId: document.getElementById('studentId'),
-    studentIdError: document.getElementById('studentIdError'),
-    saveRecordBtn: document.getElementById('saveRecordBtn'),
-    saveSuccessModal: document.getElementById('saveSuccessModal')
-};
+// DOM 요소들 (DOMContentLoaded 후에 초기화됨)
+let elements = {};
 
 // 타이핑 활동 기록
 function recordKeystroke() {
@@ -140,6 +122,27 @@ function recordKeystroke() {
 
 // 페이지 로드 시 초기화
 document.addEventListener('DOMContentLoaded', function() {
+    // DOM 요소들 초기화
+    elements = {
+        timer: document.getElementById('timer'),
+        wpm: document.getElementById('wpm'),
+        accuracy: document.getElementById('accuracy'),
+        score: document.getElementById('score'),
+        practiceText: document.getElementById('practiceText'),
+        userInput: document.getElementById('userInput'),
+        startBtn: document.getElementById('startBtn'),
+        resetBtn: document.getElementById('resetBtn'),
+        teacherLoginBtn: document.getElementById('teacherLoginBtn'),
+        completeModal: document.getElementById('completeModal'),
+        finalWpm: document.getElementById('finalWpm'),
+        finalAccuracy: document.getElementById('finalAccuracy'),
+        finalScore: document.getElementById('finalScore'),
+        studentId: document.getElementById('studentId'),
+        studentIdError: document.getElementById('studentIdError'),
+        saveRecordBtn: document.getElementById('saveRecordBtn'),
+        saveSuccessModal: document.getElementById('saveSuccessModal')
+    };
+    
     initializePage();
     setupEventListeners();
     initAudio();
