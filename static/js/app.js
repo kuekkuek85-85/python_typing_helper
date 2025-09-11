@@ -976,6 +976,9 @@ function saveRecord() {
     elements.saveRecordBtn.disabled = true;
     elements.saveRecordBtn.innerHTML = '<i class="bi bi-hourglass"></i> 저장 중...';
     
+    // 경과 시간 계산
+    const elapsedTime = startTime ? (Date.now() - startTime) / 1000 : 300; // 기본값 5분
+    
     // 저장할 데이터 준비
     const recordData = {
         student_id: studentId,
