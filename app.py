@@ -314,9 +314,17 @@ def create_record():
         current_time = time.time()
         actual_duration = current_time - session_start_time
         
-        # 실제 연습 시간과 제출된 시간의 차이 검증 (±15초 오차 허용)
-        if abs(actual_duration - duration_sec) > 15:
-            return jsonify({'error': f'연습 시간이 비정상입니다. 실제: {actual_duration:.1f}초, 제출: {duration_sec}초'}), 400
+        # 실제 연습 시간과 제출된 시간의 차이 검증
+        # 5분 연습 완료 후 학번 입력 시간을 고려하여 완화된 검증
+        if duration_sec >= 300:  # 5분 이상 연습한 경우
+            # 5분 연습 완료 후에는 추가 시간 허용 (최대 15분까지)
+            max_allowed_time = duration_sec + 900  # 제출된 연습시간 + 15분
+            if actual_duration > max_allowed_time:
+                return jsonify({'error': f'연습 완료 후 너무 많은 시간이 경과했습니다.'}), 400
+        else:
+            # 5분 미만 연습의 경우 기존 검증 유지 (±15초 오차 허용)
+            if abs(actual_duration - duration_sec) > 15:
+                return jsonify({'error': f'연습 시간이 비정상입니다. 실제: {actual_duration:.1f}초, 제출: {duration_sec}초'}), 400
         
         if duration_sec < 300:
             return jsonify({'error': '5분 종료 후 저장 가능합니다.'}), 400
