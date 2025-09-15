@@ -24,6 +24,8 @@ This project is "파이썬 타자 도우미" (Python Typing Helper) - a Python t
 
 Preferred communication style: Simple, everyday language.
 
+Work Process: Always explain the plan first before implementing any changes. Wait for user approval before proceeding with any tasks or modifications.
+
 # System Architecture
 
 ## Frontend Architecture
