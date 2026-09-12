@@ -1,0 +1,12 @@
+rules_version = '2';
+
+// 이 앱은 서버(Flask)에서 Admin SDK로만 Firestore에 접근한다.
+// Admin SDK는 보안 규칙을 우회하므로, 브라우저에서의 직접 접근은 모두 막는다.
+// (직접 접근을 허용하면 학생이 콘솔에서 기록을 위조할 수 있다.)
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "comment": "모드별 조회는 단일 필드 색인(자동 생성)만으로 동작하고 정렬은 서버에서 처리한다. 기록이 수만 건 이상으로 늘어나면 아래 복합 색인을 만들고 store.py에서 order_by를 사용하도록 바꾸면 된다.",
+  "indexes": [
+    {
+      "collectionGroup": "records",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "mode", "order": "ASCENDING" },
+        { "fieldPath": "score", "order": "DESCENDING" },
+        { "fieldPath": "accuracy", "order": "DESCENDING" },
+        { "fieldPath": "wpm", "order": "DESCENDING" },
+        { "fieldPath": "created_at", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

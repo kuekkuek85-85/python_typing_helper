@@ -12,7 +12,8 @@
 ## 2) 대상 & 환경
 - **대상**: 중학교 1학년(프로그래밍 초심자)
 - **수업 맥락**: 정보 교과, 파이썬 기초 단원
-- **플랫폼/스택**: Replit · Flask(백엔드) · HTML/CSS/JS(프런트) · Supabase(PostgreSQL)
+- **플랫폼/스택**: Flask(백엔드) · HTML/CSS/JS(프런트) · Firebase Firestore(DB)
+  - v0.8부터 Replit·Supabase(PostgreSQL) → Claude Code·Firebase(Firestore)로 이전
 - **로그인 정책(학생)**: 로그인 없음(저장 시 학번+이름만 제출)
 
 ## 3) 학습 범위(토큰/키워드)
@@ -47,10 +48,14 @@
 - **보안 강화**: 세션 기반 토큰 검증, Rate Limiting, 실제 타이핑 활동 검증
 
 ### 5.3 측정/채점
-- **WPM**: 표준 5자=1단어, 공백/기호 포함. 실시간 집계.
+- **분당 타수**: 한국식 '타/분' 기준 = 정타 수 ÷ 경과 분. 실시간 집계.
+  - v0.8에서 배율 보정(×2.5~×8)과 최소 30타 강제를 제거하고 실측값을 쓴다.
 - **정확도(%)**: (정타 수 / 총 입력 수) × 100
-- **스코어**(기본 공식): `score = round(max(0, WPM) * (accuracy/100)**2 * 100)`  
+- **스코어**(기본 공식): `score = round(max(0, 분당 타수) * (accuracy/100)**2 * 100)`
   - 목적: 속도·정확도 동시 반영, 오타 과도 시 점수 하락
+  - **서버가 계산한다.** 클라이언트가 보낸 score는 무시한다.
+- **적립 포인트**: 단어를 정확히 완성할 때마다 쌓이는 화면 표시용 재미 요소.
+  저장되지 않으며 순위와 무관하다.
 
 ### 5.4 명예의 전당(대시보드)
 - **표시 기본**: **Top 10** (정렬: `score desc → accuracy desc → wpm desc → created_at asc`)
@@ -80,10 +85,12 @@
 
 ## 8) 보안 시스템
 ### 8.1 차세대 부정행위 방지 시스템
-- **실제 타이핑 활동 감지**: 키스트로크 추적으로 최소 200회 이상 타이핑 검증
-- **현실적 성능 범위**: 중학생 수준(정확도 85% + 300타, 정확도 50% + 200타 등) 벗어나는 데이터 차단
-- **타이핑 시간 분산**: 최소 4분 이상 실제 타이핑 시간 요구
-- **콘솔 해킹 차단**: JavaScript 토큰 노출 방지, 서버 측 세션 검증
+- **실제 타이핑 활동 감지**: 키 입력 추적으로 최소 100회 이상 타이핑 검증
+- **현실적 성능 범위**: 정확도 90%↑ & 450타↑, 정확도 50%↓ & 300타↑ 등 차단
+- **타수 교차 검증**: 서버가 센 키 입력 수로 설명할 수 없는 타수 거부
+- **타이핑 시간 분산**: 첫 키와 마지막 키 사이 최소 2분 요구
+- **콘솔 해킹 차단**: 점수·연습 시간을 서버가 계산하고 세션을 서버에서 검증
+  - 토큰 자체는 브라우저에서 읽을 수 있다(감출 수 없음). 실질적 방어는 서버 검증이다.
 - **Rate Limiting**: 5분당 최대 3회 제출 제한으로 남용 방지
 
 ### 8.2 사용자 경험 보안
@@ -91,19 +98,32 @@
 - **한영 입력 모드 감지**: 연습 시작 전 입력 모드 확인 및 안내
 - **세션 기반 인증**: 연습 세션별 고유 토큰으로 위조 방지
 
-## 9) 데이터 모델 & 인덱스(Supabase)
-```sql
-CREATE TABLE IF NOT EXISTS records (
-  id SERIAL PRIMARY KEY,
-  student_id TEXT NOT NULL,     -- "10218 홍길동"
-  mode TEXT NOT NULL,           -- "자리" | "낱말" | "문장" | "문단"
-  wpm INT NOT NULL,
-  accuracy FLOAT NOT NULL,
-  score INT NOT NULL,
-  duration_sec INT NOT NULL,
-  created_at TIMESTAMP DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS idx_records_mode ON records(mode);
-CREATE INDEX IF NOT EXISTS idx_records_sort ON records(score DESC, accuracy DESC, wpm DESC, created_at ASC);
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-CREATE INDEX IF NOT EXISTS idx_records_student_id_trgm ON records USING gin (student_id gin_trgm_ops);
+## 9) 데이터 모델 (Firebase Firestore)
+
+컬렉션 `records`, 문서 1건 = 연습 기록 1건.
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `student_id` | string | `"10218 홍길동"` |
+| `mode` | string | `"자리"` \| `"낱말"` \| `"문장"` \| `"문단"` |
+| `wpm` | number | 분당 타수 |
+| `accuracy` | number | 정확도(%) |
+| `score` | number | 서버 계산 점수 |
+| `duration_sec` | number | 연습 시간(항상 300) |
+| `created_at` | timestamp | UTC로 저장, API에서 KST(+09:00)로 변환 |
+
+문서 ID는 Firestore가 자동 생성한다.
+
+### 색인
+모드별 조회만 Firestore에 맡기고 정렬(score desc → accuracy desc → wpm desc →
+created_at asc)은 서버에서 처리하므로 **복합 색인이 필요 없다.** 기록이 수만 건
+이상으로 늘어나면 `firestore.indexes.json`의 복합 색인을 만들고 `store.py`가
+`order_by`를 쓰도록 바꾼다.
+
+### 보안 규칙
+서버(Admin SDK)만 접근한다. 브라우저의 직접 접근은 `firestore.rules`에서 전면
+차단한다 — 허용하면 학생이 콘솔에서 기록을 위조할 수 있다.
+
+### 검색(v0.8.2 예정)
+Firestore는 부분 일치 검색을 지원하지 않는다. 모드별 기록을 읽어 서버에서
+필터링하거나, 별도 검색용 필드를 두는 방식을 검토한다.

@@ -1,5 +1,10 @@
+"""WSGI 엔트리 포인트 (gunicorn main:app)."""
+
+import os
+
 from app import app
 
-# Replit에서 실행할 때 사용되는 엔트리 포인트
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    debug = os.environ.get('FLASK_DEBUG', '0').strip().lower() in {'1', 'true', 'yes', 'on'}
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=debug)

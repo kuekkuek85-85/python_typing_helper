@@ -1,0 +1,372 @@
+"""연습 기록 저장소.
+
+기본 백엔드는 **Firebase Firestore**(Admin SDK)이며, 자격 증명이 없으면
+로컬 JSON 파일로 자동 전환된다. 덕분에 Firebase 설정 없이도 앱을 띄워
+수업 전 점검이나 자동 테스트를 할 수 있다.
+
+Firestore는 여러 필드를 동시에 정렬하려면 복합 색인이 필요하므로, 모드별로
+문서를 읽어 파이썬에서 정렬한다(교실 규모의 기록 수에서는 충분히 빠르고,
+색인 설정 없이 바로 동작한다). 같은 모드를 반복 조회할 때는 짧은 캐시로
+Firestore 읽기 횟수를 줄인다.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import threading
+import time
+from datetime import datetime, timedelta, timezone
+
+import config
+import content
+
+logger = logging.getLogger(__name__)
+
+KST = timezone(timedelta(hours=9))
+
+RECORD_FIELDS = ('student_id', 'mode', 'wpm', 'accuracy', 'score', 'duration_sec', 'created_at')
+
+
+def now_utc() -> datetime:
+    """현재 시각(UTC, timezone-aware)."""
+    return datetime.now(timezone.utc)
+
+
+def to_api_dict(record: dict) -> dict:
+    """API 응답용 dict. created_at은 한국 시간 기준 ISO 문자열로 변환한다."""
+    created_at = record.get('created_at')
+    return {
+        'id': record.get('id'),
+        'student_id': record.get('student_id'),
+        'mode': record.get('mode'),
+        'wpm': record.get('wpm'),
+        'accuracy': record.get('accuracy'),
+        'score': record.get('score'),
+        'duration_sec': record.get('duration_sec'),
+        'created_at': created_at.astimezone(KST).isoformat() if created_at else None,
+    }
+
+
+def _sort_key(record: dict):
+    """정렬 기준: score desc → accuracy desc → wpm desc → created_at asc"""
+    created_at = record.get('created_at') or datetime.max.replace(tzinfo=timezone.utc)
+    return (-record.get('score', 0), -record.get('accuracy', 0.0),
+            -record.get('wpm', 0), created_at)
+
+
+class RecordStore:
+    """저장소 공통 로직(정렬·페이지네이션·통계·캐시)."""
+
+    backend = 'base'
+
+    def __init__(self, cache_ttl_seconds: int | None = None):
+        self._cache_ttl = (cache_ttl_seconds if cache_ttl_seconds is not None
+                           else config.STORE_CACHE_TTL_SECONDS)
+        self._cache_lock = threading.Lock()
+        self._cache: dict[str, tuple[float, list[dict]]] = {}
+
+    # --- 하위 클래스가 구현 -------------------------------------------------
+    def ping(self) -> bool:
+        raise NotImplementedError
+
+    def _persist(self, record: dict) -> dict:
+        raise NotImplementedError
+
+    def _fetch_mode(self, mode: str) -> list[dict]:
+        raise NotImplementedError
+
+    # --- 공통 API ---------------------------------------------------------
+    def add(self, *, student_id: str, mode: str, wpm: int, accuracy: float, score: int,
+            duration_sec: int, created_at: datetime | None = None) -> dict:
+        record = {
+            'student_id': student_id,
+            'mode': mode,
+            'wpm': int(wpm),
+            'accuracy': float(accuracy),
+            'score': int(score),
+            'duration_sec': int(duration_sec),
+            'created_at': created_at or now_utc(),
+        }
+        saved = self._persist(record)
+        self.invalidate(mode)
+        return saved
+
+    def records_for_mode(self, mode: str) -> list[dict]:
+        """모드별 기록을 정렬된 상태로 돌려준다(짧은 캐시 사용)."""
+        cached = self._cached(mode)
+        if cached is not None:
+            return cached
+
+        records = sorted(self._fetch_mode(mode), key=_sort_key)
+        self._store_cache(mode, records)
+        return records
+
+    def top(self, mode: str, limit: int = 10) -> list[dict]:
+        return self.records_for_mode(mode)[:limit]
+
+    def page(self, mode: str, limit: int, offset: int) -> tuple[list[dict], int]:
+        records = self.records_for_mode(mode)
+        return records[offset:offset + limit], len(records)
+
+    def stats(self) -> dict:
+        all_records: list[dict] = []
+        for mode in content.PRACTICE_MODES:
+            all_records.extend(self.records_for_mode(mode))
+
+        total_records = len(all_records)
+        students = {record['student_id'] for record in all_records}
+        avg_wpm = (sum(r['wpm'] for r in all_records) / total_records) if total_records else 0.0
+        avg_accuracy = ((sum(r['accuracy'] for r in all_records) / total_records)
+                        if total_records else 0.0)
+
+        return {
+            'total_students': len(students),
+            'total_records': total_records,
+            'avg_wpm': avg_wpm,
+            'avg_accuracy': avg_accuracy,
+        }
+
+    def invalidate(self, mode: str | None = None) -> None:
+        with self._cache_lock:
+            if mode is None:
+                self._cache.clear()
+            else:
+                self._cache.pop(mode, None)
+
+    def _cached(self, mode: str) -> list[dict] | None:
+        if self._cache_ttl <= 0:
+            return None
+        with self._cache_lock:
+            entry = self._cache.get(mode)
+            if entry and time.time() - entry[0] < self._cache_ttl:
+                return entry[1]
+        return None
+
+    def _store_cache(self, mode: str, records: list[dict]) -> None:
+        if self._cache_ttl <= 0:
+            return
+        with self._cache_lock:
+            self._cache[mode] = (time.time(), records)
+
+
+class FirestoreStore(RecordStore):
+    """Firebase Firestore 백엔드(Admin SDK)."""
+
+    backend = 'firestore'
+
+    def __init__(self, collection_name: str | None = None, cache_ttl_seconds: int | None = None):
+        super().__init__(cache_ttl_seconds)
+        self._collection_name = collection_name or config.FIRESTORE_COLLECTION
+        self._client = _create_firestore_client()
+
+    @property
+    def _collection(self):
+        return self._client.collection(self._collection_name)
+
+    def ping(self) -> bool:
+        try:
+            # 문서 1개만 읽어 연결을 확인한다.
+            next(iter(self._collection.limit(1).stream()), None)
+            return True
+        except Exception as error:  # noqa: BLE001 - 연결 실패 사유는 로그로만 남긴다
+            logger.error("Firestore 연결 실패: %s", error)
+            return False
+
+    def _persist(self, record: dict) -> dict:
+        doc_ref = self._collection.document()
+        doc_ref.set({key: record[key] for key in RECORD_FIELDS})
+        return {**record, 'id': doc_ref.id}
+
+    def _fetch_mode(self, mode: str) -> list[dict]:
+        query = _apply_mode_filter(self._collection, mode)
+        return [self._document_to_record(doc) for doc in query.stream()]
+
+    @staticmethod
+    def _document_to_record(doc) -> dict:
+        data = doc.to_dict() or {}
+        created_at = data.get('created_at')
+        if isinstance(created_at, datetime) and created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        elif isinstance(created_at, str):
+            created_at = _parse_datetime(created_at)
+        return {
+            'id': doc.id,
+            'student_id': data.get('student_id', ''),
+            'mode': data.get('mode', ''),
+            'wpm': int(data.get('wpm', 0) or 0),
+            'accuracy': float(data.get('accuracy', 0.0) or 0.0),
+            'score': int(data.get('score', 0) or 0),
+            'duration_sec': int(data.get('duration_sec', 0) or 0),
+            'created_at': created_at,
+        }
+
+
+class LocalJsonStore(RecordStore):
+    """로컬 JSON 파일 백엔드(개발·테스트·오프라인 수업용)."""
+
+    backend = 'local'
+
+    def __init__(self, path: str | None = None, cache_ttl_seconds: int | None = None):
+        # 파일을 매번 읽어도 부담이 없으므로 캐시는 기본적으로 쓰지 않는다.
+        super().__init__(0 if cache_ttl_seconds is None else cache_ttl_seconds)
+        self._path = path or config.LOCAL_DB_PATH
+        self._lock = threading.Lock()
+        directory = os.path.dirname(os.path.abspath(self._path))
+        os.makedirs(directory, exist_ok=True)
+
+    @property
+    def path(self) -> str:
+        return self._path
+
+    def ping(self) -> bool:
+        try:
+            self._read()
+            return True
+        except Exception as error:  # noqa: BLE001
+            logger.error("로컬 저장소 읽기 실패: %s", error)
+            return False
+
+    def _persist(self, record: dict) -> dict:
+        with self._lock:
+            data = self._read()
+            record_id = str(data.get('next_id', 1))
+            saved = {**record, 'id': record_id}
+            data['records'].append({
+                **{key: record[key] for key in RECORD_FIELDS if key != 'created_at'},
+                'created_at': record['created_at'].isoformat(),
+                'id': record_id,
+            })
+            data['next_id'] = int(record_id) + 1
+            self._write(data)
+        return saved
+
+    def _fetch_mode(self, mode: str) -> list[dict]:
+        with self._lock:
+            data = self._read()
+        records = []
+        for raw in data.get('records', []):
+            if raw.get('mode') != mode:
+                continue
+            records.append({
+                'id': raw.get('id'),
+                'student_id': raw.get('student_id', ''),
+                'mode': raw.get('mode', ''),
+                'wpm': int(raw.get('wpm', 0) or 0),
+                'accuracy': float(raw.get('accuracy', 0.0) or 0.0),
+                'score': int(raw.get('score', 0) or 0),
+                'duration_sec': int(raw.get('duration_sec', 0) or 0),
+                'created_at': _parse_datetime(raw.get('created_at')),
+            })
+        return records
+
+    def _read(self) -> dict:
+        if not os.path.exists(self._path):
+            return {'next_id': 1, 'records': []}
+        try:
+            with open(self._path, 'r', encoding='utf-8') as handle:
+                data = json.load(handle)
+        except (json.JSONDecodeError, OSError) as error:
+            logger.error("로컬 저장소 파일이 손상되었습니다(%s): %s", self._path, error)
+            return {'next_id': 1, 'records': []}
+        data.setdefault('records', [])
+        data.setdefault('next_id', len(data['records']) + 1)
+        return data
+
+    def _write(self, data: dict) -> None:
+        # 같은 디렉터리에 임시 파일로 쓴 뒤 교체해 쓰기 중단 시 파일이 깨지지 않게 한다.
+        temp_path = f"{self._path}.tmp"
+        with open(temp_path, 'w', encoding='utf-8') as handle:
+            json.dump(data, handle, ensure_ascii=False, indent=2)
+        os.replace(temp_path, self._path)
+
+
+def _parse_datetime(value) -> datetime | None:
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+    except ValueError:
+        logger.warning("created_at 값을 해석할 수 없습니다: %r", value)
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _apply_mode_filter(collection, mode: str):
+    """google-cloud-firestore 버전에 따라 달라지는 where() 호출을 흡수한다."""
+    try:
+        from google.cloud.firestore_v1.base_query import FieldFilter
+
+        return collection.where(filter=FieldFilter('mode', '==', mode))
+    except ImportError:  # 구버전 SDK
+        return collection.where('mode', '==', mode)
+
+
+def _firebase_credential():
+    """환경 변수에서 서비스 계정 자격 증명을 만든다. 없으면 None(기본 자격 증명)."""
+    from firebase_admin import credentials
+
+    raw_json = os.environ.get('FIREBASE_SERVICE_ACCOUNT_JSON')
+    if raw_json:
+        return credentials.Certificate(json.loads(raw_json))
+
+    key_file = (os.environ.get('FIREBASE_SERVICE_ACCOUNT_FILE')
+                or os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'))
+    if key_file:
+        return credentials.Certificate(key_file)
+
+    return None
+
+
+def _create_firestore_client():
+    import firebase_admin
+    from firebase_admin import firestore
+
+    if not firebase_admin._apps:  # noqa: SLF001 - 초기화 여부 확인용 공식 관례
+        options = {}
+        project_id = os.environ.get('FIREBASE_PROJECT_ID') or os.environ.get('GCLOUD_PROJECT')
+        if project_id:
+            options['projectId'] = project_id
+        firebase_admin.initialize_app(_firebase_credential(), options or None)
+
+    return firestore.client()
+
+
+def firebase_credentials_available() -> bool:
+    return any(os.environ.get(name) for name in (
+        'FIREBASE_SERVICE_ACCOUNT_JSON',
+        'FIREBASE_SERVICE_ACCOUNT_FILE',
+        'GOOGLE_APPLICATION_CREDENTIALS',
+    ))
+
+
+def create_store() -> RecordStore:
+    """config.STORE_BACKEND 설정에 따라 저장소를 만든다."""
+    backend = config.STORE_BACKEND
+
+    if backend == 'local':
+        logger.info("로컬 JSON 저장소를 사용합니다: %s", config.LOCAL_DB_PATH)
+        return LocalJsonStore()
+
+    if backend == 'firestore':
+        return FirestoreStore()
+
+    if backend != 'auto':
+        logger.warning("알 수 없는 STORE_BACKEND=%r → auto로 처리합니다.", backend)
+
+    if firebase_credentials_available():
+        try:
+            return FirestoreStore()
+        except Exception as error:  # noqa: BLE001
+            logger.error("Firestore 초기화 실패 → 로컬 JSON 저장소로 대체합니다: %s", error)
+            return LocalJsonStore()
+
+    logger.warning(
+        "Firebase 자격 증명이 없어 로컬 JSON 저장소를 사용합니다(%s). "
+        "실제 수업에 배포할 때는 FIREBASE_SERVICE_ACCOUNT_JSON을 설정하세요.",
+        config.LOCAL_DB_PATH,
+    )
+    return LocalJsonStore()
