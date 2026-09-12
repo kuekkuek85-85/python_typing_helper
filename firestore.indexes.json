@@ -1,12 +1,15 @@
 {
-  "comment": "복합 색인은 필수가 아니다. 없으면 앱이 모드별 전체 읽기로 자동 대체된다(store.py의 _fetch_head). 만들어 두면 순위표 Top10과 앞쪽 페이지가 전체 문서를 읽지 않고 상위 수십 개만 읽으므로 기록이 쌓여도 비용과 응답 시간이 늘지 않는다. 기록이 수백 건을 넘어가면 만드는 것을 권한다. 아래는 store.py가 실제로 쓰는 쿼리(where mode == ? order by score desc)에 필요한 최소 색인이다. 정렬의 나머지 기준(accuracy, wpm, created_at)은 읽어온 뒤 파이썬에서 처리하므로 색인에 넣지 않는다 - 넣으면 쓰기 비용만 늘어난다. 생성: Firebase 콘솔 > Firestore > 색인, 또는 firebase deploy --only firestore:indexes",
+  "comment": "복합 색인은 필수가 아니다. 없으면 앱이 모드별 전체 읽기로 자동 대체된다(store.py의 _fetch_head). 만들어 두면 순위표 Top10과 앞쪽 페이지가 전체 문서를 읽지 않고 필요한 개수만 읽으므로 기록이 쌓여도 비용과 응답 시간이 늘지 않는다. 기록이 수백 건을 넘어가면 만드는 것을 권한다. 필드 순서는 store.py의 SORT_ORDER와 반드시 같아야 한다 - 동점자 처리까지 Firestore가 정렬해야 색인 경로와 전체 읽기 경로의 순위가 일치한다. 생성: Firebase 콘솔 > Firestore > 색인, 또는 firebase deploy --only firestore:indexes",
   "indexes": [
     {
       "collectionGroup": "records",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "mode", "order": "ASCENDING" },
-        { "fieldPath": "score", "order": "DESCENDING" }
+        { "fieldPath": "score", "order": "DESCENDING" },
+        { "fieldPath": "accuracy", "order": "DESCENDING" },
+        { "fieldPath": "wpm", "order": "DESCENDING" },
+        { "fieldPath": "created_at", "order": "ASCENDING" }
       ]
     }
   ],

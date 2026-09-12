@@ -4,10 +4,14 @@
 로컬 JSON 파일로 자동 전환된다. 덕분에 Firebase 설정 없이도 앱을 띄워
 수업 전 점검이나 자동 테스트를 할 수 있다.
 
-Firestore는 여러 필드를 동시에 정렬하려면 복합 색인이 필요하므로, 모드별로
-문서를 읽어 파이썬에서 정렬한다(교실 규모의 기록 수에서는 충분히 빠르고,
-색인 설정 없이 바로 동작한다). 같은 모드를 반복 조회할 때는 짧은 캐시로
-Firestore 읽기 횟수를 줄인다.
+읽는 문서 수를 줄이는 방법은 세 가지다.
+- 개수(탭 배지, 페이지네이션 total): 집계 쿼리 count() - 문서를 읽지 않는다
+- 순위표 상위/앞쪽 페이지: order_by + limit 로 필요한 개수만 읽는다.
+  복합 색인이 필요하지만, 없으면 모드별 전체 읽기로 자동 대체되므로 색인 설정
+  없이도 동작한다.
+- 전체 보기: 어차피 전부 필요하므로 모드별 전체 읽기
+
+같은 모드를 반복 조회할 때는 짧은 캐시로 Firestore 읽기 횟수를 더 줄인다.
 """
 
 from __future__ import annotations
@@ -32,8 +36,6 @@ RECORD_FIELDS = ('student_id', 'mode', 'wpm', 'accuracy', 'score', 'duration_sec
 # 어차피 대부분을 읽어야 하므로 모드별 전체 읽기가 낫다.
 HEAD_FETCH_MAX = 200
 
-# 동점자로 정렬 순서가 밀릴 수 있어 필요한 개수보다 여유 있게 읽는다.
-TIE_BREAK_BUFFER = 5
 
 
 def now_utc() -> datetime:
@@ -56,6 +58,16 @@ def to_api_dict(record: dict) -> dict:
     }
 
 
+# 순위 정렬 기준. Firestore order_by와 파이썬 정렬이 **같은 순서**를 써야 한다.
+# 하나만 바꾸면 색인 경로와 전체 읽기 경로의 순위가 달라진다.
+SORT_ORDER = (
+    ('score', 'DESCENDING'),
+    ('accuracy', 'DESCENDING'),
+    ('wpm', 'DESCENDING'),
+    ('created_at', 'ASCENDING'),
+)
+
+
 def _sort_key(record: dict):
     """정렬 기준: score desc → accuracy desc → wpm desc → created_at asc"""
     created_at = record.get('created_at') or datetime.max.replace(tzinfo=timezone.utc)
@@ -74,6 +86,10 @@ class RecordStore:
         self._cache_lock = threading.Lock()
         # 키 → (저장 시각, 값). 값은 기록 목록 또는 개수.
         self._cache: dict[str, tuple[float, object]] = {}
+        # 무효화 세대. 조회를 시작할 때의 세대와 저장할 때의 세대가 다르면
+        # 조회 도중 새 기록이 저장된 것이므로 오래된 값을 캐시하지 않는다.
+        self._generations: dict[str, int] = {}
+        self._global_generation = 0
 
     # --- 하위 클래스가 구현 -------------------------------------------------
     def ping(self) -> bool:
@@ -107,8 +123,9 @@ class RecordStore:
         if cached is not None:
             return cached
 
+        generation = self._generation(mode)
         records = sorted(self._fetch_mode(mode), key=_sort_key)
-        self._store_cache(mode, records)
+        self._store_cache(mode, records, mode=mode, generation=generation)
         return records
 
     def count_for_mode(self, mode: str) -> int:
@@ -123,6 +140,16 @@ class RecordStore:
         return records[offset:offset + limit], len(records)
 
     def stats(self) -> dict:
+        """전체 통계.
+
+        ⚠️ **모든 모드의 문서를 전부 읽는다.** 평균과 고유 학생 수는 집계 쿼리로
+        구할 수 없기 때문이다(Firestore에 distinct 집계가 없다). 현재 이 함수를
+        호출하는 화면이 없으므로 실제 비용은 발생하지 않는다.
+
+        **화면에 연결하기 전에 반드시 다시 설계해야 한다.** 기록을 저장할 때
+        요약 문서(건수·합계·학생 목록)를 함께 갱신하고 그 문서만 읽는 방식이
+        맞다. 교사 대시보드(SRD v0.9)에서 이 수치를 실제로 쓸 때 함께 만든다.
+        """
         all_records: list[dict] = []
         for mode in content.PRACTICE_MODES:
             all_records.extend(self.records_for_mode(mode))
@@ -145,10 +172,17 @@ class RecordStore:
         with self._cache_lock:
             if mode is None:
                 self._cache.clear()
+                self._global_generation += 1
                 return
             prefix = f'{mode}:'
             for key in [k for k in self._cache if k == mode or k.startswith(prefix)]:
                 del self._cache[key]
+            self._generations[mode] = self._generations.get(mode, 0) + 1
+
+    def _generation(self, mode: str) -> tuple[int, int]:
+        """조회 시작 시점의 무효화 세대."""
+        with self._cache_lock:
+            return (self._global_generation, self._generations.get(mode, 0))
 
     def _cached(self, key: str):
         if self._cache_ttl <= 0:
@@ -159,10 +193,20 @@ class RecordStore:
                 return entry[1]
         return None
 
-    def _store_cache(self, key: str, value) -> None:
+    def _store_cache(self, key: str, value, mode: str | None = None,
+                     generation: tuple[int, int] | None = None) -> None:
+        """조회 도중 무효화가 일어나지 않았을 때만 캐시에 저장한다.
+
+        이 확인이 없으면 A 스레드가 옛 데이터를 읽는 동안 B 스레드가 기록을 저장하고
+        무효화한 뒤, A가 옛 목록을 다시 캐시해 새 기록이 TTL 동안 안 보이게 된다.
+        """
         if self._cache_ttl <= 0:
             return
         with self._cache_lock:
+            if generation is not None:
+                current = (self._global_generation, self._generations.get(mode, 0))
+                if current != generation:
+                    return
             self._cache[key] = (time.time(), value)
 
 
@@ -208,6 +252,7 @@ class FirestoreStore(RecordStore):
         if cached is not None:
             return cached  # type: ignore[return-value]
 
+        generation = self._generation(mode)
         try:
             query = _apply_mode_filter(self._collection, mode)
             result = query.count().get()
@@ -216,7 +261,7 @@ class FirestoreStore(RecordStore):
             logger.warning("집계 쿼리 실패 → 전체 읽기로 개수를 셉니다: %s", error)
             total = len(self.records_for_mode(mode))
 
-        self._store_cache(cache_key, total)
+        self._store_cache(cache_key, total, mode=mode, generation=generation)
         return total
 
     def top(self, mode: str, limit: int = 10) -> list[dict]:
@@ -239,30 +284,33 @@ class FirestoreStore(RecordStore):
         return records[offset:offset + limit], total
 
     def _fetch_head(self, mode: str, needed: int) -> list[dict] | None:
-        """점수 내림차순 상위 문서만 읽어 정렬해 돌려준다.
+        """순위 상위 문서만 읽어 돌려준다.
 
-        복합 색인(mode ASC, score DESC)이 없으면 None을 돌려주고, 호출자가
-        전체 읽기로 대체한다. 덕분에 색인을 만들지 않아도 앱이 그대로 동작하고,
-        색인을 만들면 읽는 문서 수가 전체에서 수십 개로 줄어든다.
+        **정렬 기준(SORT_ORDER) 전부를 쿼리의 order_by에 넣는다.** score만 정렬하고
+        나머지를 읽은 뒤 파이썬에서 처리하면, 같은 점수가 읽어온 개수보다 많을 때
+        경계에서 더 높은 정확도·타수의 기록이 잘려 전체 읽기 경로와 순위가 달라진다.
+
+        필요한 복합 색인이 없으면 None을 돌려주고 호출자가 전체 읽기로 대체한다.
+        덕분에 색인을 만들지 않아도 앱이 그대로 동작하고, 색인을 만들면 읽는 문서
+        수가 전체에서 필요한 개수만큼으로 줄어든다.
         """
         if needed <= 0 or needed > HEAD_FETCH_MAX:
             return None
 
-        # 동점자 때문에 정렬 기준이 밀릴 수 있어 여유를 두고 읽는다.
-        fetch_size = min(HEAD_FETCH_MAX, max(needed * TIE_BREAK_BUFFER, needed + 10))
-        cache_key = f'{mode}:head:{fetch_size}'
+        cache_key = f'{mode}:head:{needed}'
         cached = self._cached(cache_key)
         if cached is not None:
             return cached  # type: ignore[return-value]
 
+        generation = self._generation(mode)
         try:
-            from google.cloud import firestore as firestore_module
-
-            query = (_apply_mode_filter(self._collection, mode)
-                     .order_by('score', direction=firestore_module.Query.DESCENDING)
-                     .limit(fetch_size))
-            records = sorted((self._document_to_record(doc) for doc in query.stream()),
-                             key=_sort_key)
+            query = _apply_mode_filter(self._collection, mode)
+            for field, direction in SORT_ORDER:
+                query = query.order_by(field, direction=direction)
+            # 쿼리가 이미 최종 순서로 돌려주지만, created_at의 시간대 정규화까지
+            # 파이썬 정렬과 완전히 일치시키기 위해 한 번 더 정렬한다.
+            records = sorted((self._document_to_record(doc)
+                              for doc in query.limit(needed).stream()), key=_sort_key)
         except Exception as error:  # noqa: BLE001 - 색인이 없으면 전체 읽기로 대체
             if not self._head_fetch_warned:
                 self._head_fetch_warned = True
@@ -273,7 +321,7 @@ class FirestoreStore(RecordStore):
                 )
             return None
 
-        self._store_cache(cache_key, records)
+        self._store_cache(cache_key, records, mode=mode, generation=generation)
         return records
 
     @staticmethod
