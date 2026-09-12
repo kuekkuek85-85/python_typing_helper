@@ -10,5 +10,14 @@ data/
 
 # 비밀 정보 - 절대 커밋하지 않는다
 .env
+.env.*
+!.env.example
+
+# Firebase 서비스 계정 키.
+# 콘솔에서 내려받은 파일 이름은 "<프로젝트>-firebase-adminsdk-<...>.json" 형태라
+# 앞에 무엇이 붙어도 걸리도록 앞뒤에 * 를 둔다.
+*firebase-adminsdk*.json
 *serviceAccount*.json
-firebase-adminsdk*.json
+*service-account*.json
+*serviceaccount*.json
+secrets/
