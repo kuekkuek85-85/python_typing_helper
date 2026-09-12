@@ -1,27 +1,34 @@
-name: Codex 코드 리뷰
+name: Codex 코드 리뷰 (수동)
 
-# 동작 방식
-#  - PR이 열리거나 커밋이 추가되면 Codex가 변경분만 리뷰하고 PR에 댓글을 남긴다.
-#  - Actions 탭에서 "Run workflow"로 직접 실행하면 지정한 브랜치와의 차이를 리뷰하고
-#    실행 요약(Summary)에 결과를 적는다. (PR이 없어도 쓸 수 있다)
+# ⚠️ 이 워크플로는 OpenAI **API 종량제 과금**을 씁니다.
+#    ChatGPT Plus/Pro 구독과는 별도로 청구됩니다.
 #
-# 준비물
-#  - 저장소 Settings → Secrets and variables → Actions 에 OPENAI_API_KEY 등록
-#    (없으면 리뷰를 건너뛰고 경고만 남긴다. 워크플로가 실패하지는 않는다)
+# 평소 PR 리뷰는 Codex GitHub 앱 연동을 쓰세요. 유료 ChatGPT 플랜에 포함되어
+# 있어 추가 비용이 없습니다 (chatgpt.com/codex → 설정 → Code review).
+# 리뷰 기준은 두 방식 모두 저장소의 AGENTS.md 를 따릅니다.
+#
+# 이 워크플로는 그 대안이 필요할 때를 위한 수동 실행용입니다. 예를 들어
+#  - Codex 앱을 연결할 수 없는 저장소에서 리뷰가 필요할 때
+#  - 플랜 사용량을 다 써서 API로 돌려야 할 때
+#
+# 자동 실행하지 않습니다. Actions 탭에서 직접 실행해야 합니다.
+# (PR마다 자동으로 돌리고 싶다면 아래 on: 에 pull_request 트리거를 추가하세요.
+#  단, 커밋마다 API 비용이 발생합니다.)
+#
+# 필요한 시크릿: OPENAI_API_KEY
+#   Settings → Secrets and variables → Actions → New repository secret
+#   없으면 리뷰를 건너뛰고 경고만 남깁니다(워크플로는 실패하지 않음).
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
   workflow_dispatch:
     inputs:
       base:
-        description: "비교 기준 브랜치"
+        description: "비교 기준 브랜치 (이 브랜치와의 차이를 리뷰합니다)"
         required: false
         default: main
 
-# 같은 PR에 커밋을 연달아 올리면 이전 리뷰 실행은 취소한다(API 비용 절약).
 concurrency:
-  group: codex-review-${{ github.event.pull_request.number || github.ref }}
+  group: codex-review-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -37,8 +44,6 @@ jobs:
       - name: 소스 체크아웃
         uses: actions/checkout@v5
         with:
-          # PR은 병합 결과를 리뷰한다. 수동 실행은 선택한 브랜치를 그대로 본다.
-          ref: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.ref }}
           # 변경분을 비교해야 하므로 전체 이력이 필요하다.
           fetch-depth: 0
           persist-credentials: false
@@ -53,27 +58,19 @@ jobs:
             echo "has_key=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_key=false" >> "$GITHUB_OUTPUT"
-            echo "::warning title=Codex 리뷰 건너뜀::OPENAI_API_KEY 시크릿이 설정되지 않았습니다. 저장소 Settings → Secrets and variables → Actions 에서 등록하세요."
+            echo "::warning title=Codex 리뷰 건너뜀::OPENAI_API_KEY 시크릿이 없습니다. 추가 비용 없이 리뷰하려면 Codex GitHub 앱 연동을 쓰세요(유료 ChatGPT 플랜 포함)."
           fi
 
       - name: 리뷰 범위 계산
         if: steps.check_key.outputs.has_key == 'true'
         env:
           # GitHub 표현식을 셸 코드에 직접 끼워 넣지 않는다(셸 인젝션 방지).
-          EVENT_NAME: ${{ github.event_name }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           DISPATCH_BASE: ${{ inputs.base }}
         run: |
           set -euo pipefail
-          if [ "${EVENT_NAME}" = "pull_request" ]; then
-            base_sha="${PR_BASE_SHA}"
-            head_sha="${PR_HEAD_SHA}"
-          else
-            git fetch --no-tags origin "${DISPATCH_BASE}"
-            base_sha="$(git rev-parse FETCH_HEAD)"
-            head_sha="$(git rev-parse HEAD)"
-          fi
+          git fetch --no-tags origin "${DISPATCH_BASE}"
+          base_sha="$(git rev-parse FETCH_HEAD)"
+          head_sha="$(git rev-parse HEAD)"
           echo "BASE_SHA=${base_sha}" >> "$GITHUB_ENV"
           echo "HEAD_SHA=${head_sha}" >> "$GITHUB_ENV"
           echo "리뷰 범위: ${base_sha}...${head_sha}"
@@ -99,54 +96,20 @@ jobs:
           # 이 값을 unsafe/read-only로 바꾸면 OPENAI_API_KEY가 프로세스 메모리에서
           # 읽힐 수 있다(공식 보안 문서 경고).
           #
-          # PR 제목·본문은 프롬프트에 넣지 않는다. 외부에서 조작 가능한 텍스트로
-          # 리뷰어를 유도하는 프롬프트 인젝션 통로가 되기 때문이다. 리뷰는 diff와
-          # CLAUDE.md만 근거로 한다.
+          # 점검 항목은 AGENTS.md 의 "Review guidelines" 한 곳에만 둔다.
+          # 여기에 복사해 두면 둘이 어긋난다(이 프로젝트가 점수 공식으로 겪은 문제).
           prompt: |
-            너는 이 저장소의 코드 리뷰어다. 한국어로 답한다.
+            이 저장소의 코드 리뷰를 수행한다.
 
-            ## 프로젝트
-            중학교 1학년 정보 교과용 파이썬 타자 연습 웹 앱.
-            Flask + 바닐라 JavaScript + Firebase Firestore.
-            저장소 규칙과 구조는 `CLAUDE.md`에 있다. **리뷰 전에 반드시 읽어라.**
+            먼저 `AGENTS.md`와 `CLAUDE.md`를 읽고, `AGENTS.md`의
+            "Review guidelines" 섹션을 리뷰 기준과 출력 형식으로 따른다.
 
-            ## 리뷰 대상
-            아래 범위의 변경분만 리뷰한다. 범위 밖의 기존 코드는 지적하지 않는다.
+            리뷰 대상은 아래 범위의 변경분이다.
 
                 git diff ${{ env.BASE_SHA }}...${{ env.HEAD_SHA }}
                 git log --oneline ${{ env.BASE_SHA }}...${{ env.HEAD_SHA }}
 
             필요하면 주변 파일을 열어 맥락을 확인해도 된다.
-
-            ## 이 프로젝트에서 실제로 사고가 났던 지점 (우선 확인)
-            1. **점수 공식 이중화**: 점수는 서버 `scoring.compute_score()`와
-               화면 `static/js/app.js`의 `computeScore()`가 같은 공식을 써야 한다.
-               한쪽만 바뀌면 학생이 본 점수와 저장된 점수가 달라진다.
-            2. **정상 기록을 거부하는 검증**: `scoring.py`와 `app.py`의 `create_record`가
-               정상적으로 연습한 학생의 기록까지 막을 수 있는지. 과거에 점수 검증식 불일치와
-               타이핑 구간 계산 때문에 저장이 거의 항상 실패했다.
-            3. **워커 1개 가정**: `sessions.py`의 연습 세션·키 입력 집계는 프로세스 메모리에
-               있다. 이 가정을 깨는 변경(워커 증설, 상태 분산)이 있는지.
-            4. **비밀 정보**: 서비스 계정 키나 `.env`가 커밋에 포함됐는지, 로그·API 응답·에러
-               메시지로 새어 나가는지.
-            5. **클라이언트 값 신뢰**: 브라우저가 보낸 값을 그대로 저장·신뢰하는 코드가
-               새로 생겼는지. `score`와 `duration_sec`은 반드시 서버가 계산해야 한다.
-            6. **Firestore 비용/지연**: 기록 수가 늘면 읽기 횟수나 응답 시간이 급격히
-               나빠지는 쿼리 패턴인지.
-            7. **브라우저 예외**: null 참조, 응답 형식 가정, 이벤트 리스너 중복 등록 등으로
-               JS 예외가 날 수 있는 경로.
-            8. **테스트**: 바뀐 동작을 `tests/`가 검증하는지. 빠진 게 있으면 어떤 테스트가
-               필요한지 한 줄로.
-
-            ## 출력 형식
-            - 심각도(**높음** / 보통 / 낮음)를 붙이고, `파일:줄번호` 형식으로 위치를 밝힌다.
-            - 각 지적은 "무엇이 문제인지 → 어떤 상황에서 실제로 깨지는지 → 어떻게 고칠지"
-              순서로 3줄 이내.
-            - 코드를 직접 확인하지 못해 추정한 내용은 **(추측)** 이라고 표시한다.
-            - 스타일·포맷 취향은 지적하지 않는다. 동작·보안·유지보수에 영향이 있는 것만.
-            - 문제가 없으면 "지적할 만한 문제를 찾지 못했습니다"라고 쓴다.
-              **억지로 지적을 만들지 마라.**
-            - 전체 600단어 이내.
 
   report:
     name: 리뷰 결과 게시
@@ -154,9 +117,7 @@ jobs:
     needs: review
     if: needs.review.outputs.has_key == 'true' && needs.review.outputs.final_message != ''
     permissions:
-      # PR 댓글은 Issues API로 작성되므로 두 권한을 모두 준다(공식 예시와 동일).
-      issues: write
-      pull-requests: write
+      contents: read
     steps:
       - name: 실행 요약에 기록
         env:
@@ -168,31 +129,3 @@ jobs:
             echo
             printf '%s\n' "${CODEX_FINAL_MESSAGE}"
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: PR에 댓글 작성
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        env:
-          CODEX_FINAL_MESSAGE: ${{ needs.review.outputs.final_message }}
-        with:
-          github-token: ${{ github.token }}
-          script: |
-            const LIMIT = 60000; // GitHub 댓글 길이 제한(65536)보다 여유 있게
-            const message = process.env.CODEX_FINAL_MESSAGE ?? '';
-            const body = [
-              '## 🤖 Codex 코드 리뷰',
-              '',
-              message.length > LIMIT
-                ? message.slice(0, LIMIT) + '\n\n_(길어서 잘렸습니다. 전체 내용은 Actions 실행 요약에서 확인하세요.)_'
-                : message,
-              '',
-              '---',
-              '_`.github/workflows/codex-review.yml`이 자동으로 남긴 댓글입니다. 지적이 항상 맞지는 않으니 판단은 사람이 하세요._',
-            ].join('\n');
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number,
-              body,
-            });

@@ -78,19 +78,27 @@ Firestore에는 UTC로 저장하고, API 응답에서 `+09:00`이 붙은 ISO 문
 저장할 수 없다. `static/vendor/`의 사본을 쓴다. 업데이트 방법은
 `static/vendor/README.md` 참고.
 
-## 자동 코드 리뷰 (GitHub Actions)
+## 코드 리뷰 (Codex)
 
-`.github/workflows/codex-review.yml` — PR이 열리거나 커밋이 추가되면 OpenAI Codex가
-변경분을 리뷰해 PR에 댓글을 남긴다. Actions 탭에서 수동 실행하면 지정한 브랜치와의
-차이를 리뷰해 실행 요약에 적는다(수동 실행은 워크플로가 기본 브랜치에 있어야 보인다).
+**리뷰 기준은 `AGENTS.md`의 "Review guidelines" 한 곳에만 둔다.** 여기나 워크플로
+프롬프트에 복사하면 둘이 어긋난다(점수 공식으로 이미 겪은 문제). 위 "꼭 기억할 규칙"이
+바뀌면 `AGENTS.md`의 점검 항목도 같이 고친다.
 
-- 필요한 시크릿: `OPENAI_API_KEY` (Settings → Secrets and variables → Actions).
-  없으면 리뷰를 건너뛰고 경고만 남긴다 — 워크플로가 실패하지는 않는다.
-- 프롬프트에 위 "꼭 기억할 규칙"을 점검 항목으로 넣어 두었다. 규칙이 바뀌면
-  워크플로의 프롬프트도 같이 고친다.
-- PR 제목·본문은 일부러 프롬프트에 넣지 않는다(프롬프트 인젝션 통로).
+### 기본: Codex GitHub 앱 연동 (추가 비용 없음)
+유료 ChatGPT 플랜에 포함된다. `chatgpt.com/codex` → 설정에서 이 저장소의
+**Code review**를 켜고, 원하면 **Automatic reviews**도 켠다. 수동으로는 PR 댓글에
+`@codex review`. API 키가 필요 없다.
+
+### 대안: `.github/workflows/codex-review.yml` (API 종량제 과금)
+Actions 탭에서 **수동 실행만** 되게 해 두었다. 지정 브랜치와의 차이를 리뷰해 실행
+요약에 적는다(수동 실행 버튼은 워크플로가 기본 브랜치에 있어야 보인다).
+`OPENAI_API_KEY` 시크릿이 없으면 건너뛰고 경고만 남긴다.
+
+- ⚠️ OpenAI API는 ChatGPT 구독과 **별도 청구**다. 구독에 API 크레딧은 포함되지 않는다.
 - `safety-strategy`는 기본값 `drop-sudo`를 유지한다. `unsafe`나 `read-only`로 바꾸면
   `OPENAI_API_KEY`가 프로세스 메모리에서 읽힐 수 있다.
+- 외부 기여자가 있는 저장소가 되면 주의: PR이 `AGENTS.md`를 수정해 리뷰를 유도할 수
+  있다(프롬프트 인젝션).
 
 ## 저장소 백엔드 전환
 
