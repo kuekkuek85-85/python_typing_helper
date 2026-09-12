@@ -35,6 +35,13 @@ WARNING 상위 문서만 읽는 경로를 쓸 수 없어 모드별 전체 읽기
 또는 Firebase CLI로: `firebase deploy --only firestore:indexes`
 (`firestore.indexes.json` 사용)
 
+필요한 색인은 `records` 컬렉션에 **`mode` 오름차순 + `score` 내림차순** 두 필드뿐입니다.
+정렬의 나머지 기준(정확도·타수·기록 시각)은 읽어온 뒤 서버에서 처리하므로 색인에
+넣지 않습니다 — 넣으면 기록을 저장할 때마다 쓰기 비용만 늘어납니다.
+
+> 참고: 서비스 계정 키로는 색인을 만들 수 없습니다(`datastore.indexes.create` 권한
+> 없음). 콘솔에서 직접 만들거나 Firebase CLI를 쓰세요.
+
 ---
 
 ## 2. 환경 변수
