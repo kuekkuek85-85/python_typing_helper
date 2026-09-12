@@ -78,6 +78,20 @@ Firestore에는 UTC로 저장하고, API 응답에서 `+09:00`이 붙은 ISO 문
 저장할 수 없다. `static/vendor/`의 사본을 쓴다. 업데이트 방법은
 `static/vendor/README.md` 참고.
 
+## 자동 코드 리뷰 (GitHub Actions)
+
+`.github/workflows/codex-review.yml` — PR이 열리거나 커밋이 추가되면 OpenAI Codex가
+변경분을 리뷰해 PR에 댓글을 남긴다. Actions 탭에서 수동 실행하면 지정한 브랜치와의
+차이를 리뷰해 실행 요약에 적는다(수동 실행은 워크플로가 기본 브랜치에 있어야 보인다).
+
+- 필요한 시크릿: `OPENAI_API_KEY` (Settings → Secrets and variables → Actions).
+  없으면 리뷰를 건너뛰고 경고만 남긴다 — 워크플로가 실패하지는 않는다.
+- 프롬프트에 위 "꼭 기억할 규칙"을 점검 항목으로 넣어 두었다. 규칙이 바뀌면
+  워크플로의 프롬프트도 같이 고친다.
+- PR 제목·본문은 일부러 프롬프트에 넣지 않는다(프롬프트 인젝션 통로).
+- `safety-strategy`는 기본값 `drop-sudo`를 유지한다. `unsafe`나 `read-only`로 바꾸면
+  `OPENAI_API_KEY`가 프로세스 메모리에서 읽힐 수 있다.
+
 ## 저장소 백엔드 전환
 
 `STORE_BACKEND` 환경 변수로 결정한다.
