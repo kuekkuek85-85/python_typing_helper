@@ -45,6 +45,16 @@ MIN_KEYSTROKES = _env_int("MIN_KEYSTROKES", 100)
 # 거부되는 문제가 있어 2분으로 낮췄다.
 MIN_TYPING_SPAN_SECONDS = _env_int("MIN_TYPING_SPAN_SECONDS", 120)
 
+# 클라이언트가 보고한 키 입력 수를 인정하는 최대 속도(초당).
+# 브라우저는 개수만 보고하므로 값 자체를 신뢰할 수 없다. 경과 시간으로 설명할 수
+# 있는 만큼만 인정해(토큰 버킷) 개발자 도구로 개수를 부풀리지 못하게 한다.
+# 400타/분(약 6.7타/초)을 치는 학생도 여유 있게 통과하도록 잡았다.
+MAX_KEYSTROKES_PER_SECOND = _env_int("MAX_KEYSTROKES_PER_SECOND", 8)
+
+# 순간적으로 빠르게 치는 구간을 흡수하기 위한 버킷 크기(키 입력 수).
+# 이 값이 없으면 잠깐 빠르게 친 정상 기록이 과소 집계되어 거부될 수 있다.
+KEYSTROKE_BURST = _env_int("KEYSTROKE_BURST", 80)
+
 # 같은 학번으로 제출할 수 있는 빈도 제한.
 RATE_LIMIT_WINDOW = _env_int("RATE_LIMIT_WINDOW", 300)
 MAX_SUBMISSIONS_PER_WINDOW = _env_int("MAX_SUBMISSIONS_PER_WINDOW", 3)

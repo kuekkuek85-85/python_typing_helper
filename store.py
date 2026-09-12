@@ -28,6 +28,13 @@ KST = timezone(timedelta(hours=9))
 
 RECORD_FIELDS = ('student_id', 'mode', 'wpm', 'accuracy', 'score', 'duration_sec', 'created_at')
 
+# 상위 문서만 읽는 경로를 쓸 수 있는 최대 개수. 이보다 많이 필요하면(전체 보기)
+# 어차피 대부분을 읽어야 하므로 모드별 전체 읽기가 낫다.
+HEAD_FETCH_MAX = 200
+
+# 동점자로 정렬 순서가 밀릴 수 있어 필요한 개수보다 여유 있게 읽는다.
+TIE_BREAK_BUFFER = 5
+
 
 def now_utc() -> datetime:
     """현재 시각(UTC, timezone-aware)."""
@@ -65,7 +72,8 @@ class RecordStore:
         self._cache_ttl = (cache_ttl_seconds if cache_ttl_seconds is not None
                            else config.STORE_CACHE_TTL_SECONDS)
         self._cache_lock = threading.Lock()
-        self._cache: dict[str, tuple[float, list[dict]]] = {}
+        # 키 → (저장 시각, 값). 값은 기록 목록 또는 개수.
+        self._cache: dict[str, tuple[float, object]] = {}
 
     # --- 하위 클래스가 구현 -------------------------------------------------
     def ping(self) -> bool:
@@ -103,6 +111,10 @@ class RecordStore:
         self._store_cache(mode, records)
         return records
 
+    def count_for_mode(self, mode: str) -> int:
+        """모드별 기록 수. 하위 클래스는 더 싼 방법으로 대체할 수 있다."""
+        return len(self.records_for_mode(mode))
+
     def top(self, mode: str, limit: int = 10) -> list[dict]:
         return self.records_for_mode(mode)[:limit]
 
@@ -129,26 +141,29 @@ class RecordStore:
         }
 
     def invalidate(self, mode: str | None = None) -> None:
+        """캐시를 비운다. 모드별 파생 캐시(head/count)도 함께 지운다."""
         with self._cache_lock:
             if mode is None:
                 self._cache.clear()
-            else:
-                self._cache.pop(mode, None)
+                return
+            prefix = f'{mode}:'
+            for key in [k for k in self._cache if k == mode or k.startswith(prefix)]:
+                del self._cache[key]
 
-    def _cached(self, mode: str) -> list[dict] | None:
+    def _cached(self, key: str):
         if self._cache_ttl <= 0:
             return None
         with self._cache_lock:
-            entry = self._cache.get(mode)
+            entry = self._cache.get(key)
             if entry and time.time() - entry[0] < self._cache_ttl:
                 return entry[1]
         return None
 
-    def _store_cache(self, mode: str, records: list[dict]) -> None:
+    def _store_cache(self, key: str, value) -> None:
         if self._cache_ttl <= 0:
             return
         with self._cache_lock:
-            self._cache[mode] = (time.time(), records)
+            self._cache[key] = (time.time(), value)
 
 
 class FirestoreStore(RecordStore):
@@ -159,6 +174,8 @@ class FirestoreStore(RecordStore):
     def __init__(self, collection_name: str | None = None, cache_ttl_seconds: int | None = None):
         super().__init__(cache_ttl_seconds)
         self._collection_name = collection_name or config.FIRESTORE_COLLECTION
+        # 복합 색인이 없다는 경고는 한 번만 남긴다.
+        self._head_fetch_warned = False
         self._client = _create_firestore_client()
 
     @property
@@ -182,6 +199,82 @@ class FirestoreStore(RecordStore):
     def _fetch_mode(self, mode: str) -> list[dict]:
         query = _apply_mode_filter(self._collection, mode)
         return [self._document_to_record(doc) for doc in query.stream()]
+
+    # --- 서버 측에서 읽는 양을 줄이는 경로 --------------------------------
+    def count_for_mode(self, mode: str) -> int:
+        """집계 쿼리로 개수만 센다(문서를 전부 읽지 않는다)."""
+        cache_key = f'{mode}:count'
+        cached = self._cached(cache_key)
+        if cached is not None:
+            return cached  # type: ignore[return-value]
+
+        try:
+            query = _apply_mode_filter(self._collection, mode)
+            result = query.count().get()
+            total = int(result[0][0].value)
+        except Exception as error:  # noqa: BLE001 - 집계를 못 쓰면 전체 읽기로 대체
+            logger.warning("집계 쿼리 실패 → 전체 읽기로 개수를 셉니다: %s", error)
+            total = len(self.records_for_mode(mode))
+
+        self._store_cache(cache_key, total)
+        return total
+
+    def top(self, mode: str, limit: int = 10) -> list[dict]:
+        head = self._fetch_head(mode, limit)
+        if head is not None:
+            return head[:limit]
+        return self.records_for_mode(mode)[:limit]
+
+    def page(self, mode: str, limit: int, offset: int) -> tuple[list[dict], int]:
+        total = self.count_for_mode(mode)
+
+        # 앞쪽 일부만 필요하면 상위 문서만 읽는다(순위표 Top10, 탭 배지 등).
+        needed = offset + limit
+        if needed <= HEAD_FETCH_MAX:
+            head = self._fetch_head(mode, needed)
+            if head is not None:
+                return head[offset:needed], total
+
+        records = self.records_for_mode(mode)
+        return records[offset:offset + limit], total
+
+    def _fetch_head(self, mode: str, needed: int) -> list[dict] | None:
+        """점수 내림차순 상위 문서만 읽어 정렬해 돌려준다.
+
+        복합 색인(mode ASC, score DESC)이 없으면 None을 돌려주고, 호출자가
+        전체 읽기로 대체한다. 덕분에 색인을 만들지 않아도 앱이 그대로 동작하고,
+        색인을 만들면 읽는 문서 수가 전체에서 수십 개로 줄어든다.
+        """
+        if needed <= 0 or needed > HEAD_FETCH_MAX:
+            return None
+
+        # 동점자 때문에 정렬 기준이 밀릴 수 있어 여유를 두고 읽는다.
+        fetch_size = min(HEAD_FETCH_MAX, max(needed * TIE_BREAK_BUFFER, needed + 10))
+        cache_key = f'{mode}:head:{fetch_size}'
+        cached = self._cached(cache_key)
+        if cached is not None:
+            return cached  # type: ignore[return-value]
+
+        try:
+            from google.cloud import firestore as firestore_module
+
+            query = (_apply_mode_filter(self._collection, mode)
+                     .order_by('score', direction=firestore_module.Query.DESCENDING)
+                     .limit(fetch_size))
+            records = sorted((self._document_to_record(doc) for doc in query.stream()),
+                             key=_sort_key)
+        except Exception as error:  # noqa: BLE001 - 색인이 없으면 전체 읽기로 대체
+            if not self._head_fetch_warned:
+                self._head_fetch_warned = True
+                logger.warning(
+                    "상위 문서만 읽는 경로를 쓸 수 없어 모드별 전체 읽기로 대체합니다. "
+                    "firestore.indexes.json 의 복합 색인을 만들면 읽기 횟수가 크게 줄어듭니다. "
+                    "사유: %s", error,
+                )
+            return None
+
+        self._store_cache(cache_key, records)
+        return records
 
     @staticmethod
     def _document_to_record(doc) -> dict:
@@ -336,11 +429,29 @@ def _create_firestore_client():
 
 
 def firebase_credentials_available() -> bool:
-    return any(os.environ.get(name) for name in (
+    """Firestore에 쓸 수 있는 자격 증명이 있는지 확인한다.
+
+    명시적 환경 변수뿐 아니라 **기본 자격 증명(ADC)** 도 확인해야 한다.
+    Cloud Run처럼 서비스 계정이 런타임에 자동으로 주어지는 환경에서는 환경 변수가
+    없는데, 이걸 놓치면 STORE_BACKEND=auto가 로컬 JSON으로 전환되고 컨테이너가
+    재시작될 때 학생 기록이 사라진다.
+    """
+    if any(os.environ.get(name) for name in (
         'FIREBASE_SERVICE_ACCOUNT_JSON',
         'FIREBASE_SERVICE_ACCOUNT_FILE',
         'GOOGLE_APPLICATION_CREDENTIALS',
-    ))
+    )):
+        return True
+
+    try:
+        import google.auth
+
+        google.auth.default(scopes=['https://www.googleapis.com/auth/datastore'])
+        logger.info("Google 기본 자격 증명(ADC)을 찾았습니다. Firestore를 사용합니다.")
+        return True
+    except Exception as error:  # noqa: BLE001 - 자격 증명이 없는 것은 정상 경로다
+        logger.debug("기본 자격 증명을 찾지 못했습니다: %s", error)
+        return False
 
 
 def create_store() -> RecordStore:

@@ -18,9 +18,22 @@
    규칙에서 브라우저의 직접 접근을 전부 막아야 학생이 콘솔로 기록을 위조할 수
    없습니다.
 
-색인은 따로 만들지 않아도 됩니다. 모드별 조회만 Firestore에 맡기고 정렬은 서버에서
-처리합니다(`store.py`). 기록이 수만 건 이상으로 늘어나면 `firestore.indexes.json`의
-복합 색인을 만들고 `store.py`가 `order_by`를 쓰도록 바꾸면 됩니다.
+### 색인 (권장, 필수는 아님)
+
+색인 없이도 동작합니다. 다만 만들어 두면 순위표가 전체 문서를 읽지 않고 상위 수십
+개만 읽으므로, 기록이 쌓여도 Firestore 비용과 응답 시간이 늘지 않습니다.
+**기록이 수백 건을 넘어가면 만드는 것을 권합니다.**
+
+가장 쉬운 방법: 앱을 한 번 실행하면 서버 로그에 아래와 같은 경고가 남고, 그 안의
+링크를 누르면 필요한 색인이 미리 채워진 생성 화면이 열립니다.
+
+```
+WARNING 상위 문서만 읽는 경로를 쓸 수 없어 모드별 전체 읽기로 대체합니다.
+        ... 사유: 400 The query requires an index. You can create it here: https://console.firebase.google.com/...
+```
+
+또는 Firebase CLI로: `firebase deploy --only firestore:indexes`
+(`firestore.indexes.json` 사용)
 
 ---
 
@@ -36,8 +49,9 @@
 | `STORE_BACKEND` | | `auto`(기본) / `firestore` / `local` |
 | `LOG_LEVEL` | | 기본 `INFO` |
 
-\* 둘 중 하나만 설정합니다. Google Cloud Run 같이 기본 자격 증명을 쓰는 환경에서는
-둘 다 생략해도 됩니다.
+\* 둘 중 하나만 설정합니다. Google Cloud Run 같이 **기본 자격 증명(ADC)** 을 쓰는
+환경에서는 둘 다 생략해도 됩니다 — 앱이 ADC를 직접 확인해 Firestore를 사용합니다.
+배포 후 `/health`의 `backend`가 `firestore`인지 꼭 확인하세요.
 
 연습 규칙·부정행위 방지 기준도 환경 변수로 조정할 수 있습니다. `.env.example`과
 `config.py`를 참고하세요.

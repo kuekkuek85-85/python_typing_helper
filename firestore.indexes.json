@@ -1,5 +1,5 @@
 {
-  "comment": "모드별 조회는 단일 필드 색인(자동 생성)만으로 동작하고 정렬은 서버에서 처리한다. 기록이 수만 건 이상으로 늘어나면 아래 복합 색인을 만들고 store.py에서 order_by를 사용하도록 바꾸면 된다.",
+  "comment": "복합 색인은 필수가 아니다. 없으면 앱이 모드별 전체 읽기로 자동 대체된다(store.py의 _fetch_head). 만들어 두면 순위표 Top10과 탭 배지가 전체 문서를 읽지 않고 상위 수십 개만 읽으므로 기록이 쌓여도 비용과 응답 시간이 늘지 않는다. 기록이 수백 건을 넘어가면 만드는 것을 권한다. Firebase 콘솔 → Firestore → 색인 → 복합 색인 추가, 또는 firebase deploy --only firestore:indexes",
   "indexes": [
     {
       "collectionGroup": "records",

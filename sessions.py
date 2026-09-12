@@ -15,17 +15,25 @@ import config
 
 @dataclass
 class TypingActivity:
-    """한 번의 연습에서 서버가 직접 센 키 입력 기록.
+    """한 번의 연습에서 서버가 인정한 키 입력 기록.
 
     타임스탬프를 모두 모으지 않고 개수/처음/마지막만 유지하므로 긴 연습에도
     메모리가 늘지 않는다.
+
+    브라우저는 키 입력 **개수만** 보고하므로 값 자체는 신뢰할 수 없다. 그래서
+    토큰 버킷으로 "경과 시간으로 설명할 수 있는 양"만 `count`에 반영한다.
+    (`reported_count`는 클라이언트가 주장한 원래 값이며 진단용으로만 남긴다.)
     """
 
     created_at: float = field(default_factory=time.time)
     started_at: float | None = None
     count: int = 0
+    reported_count: int = 0
     first_keystroke_at: float | None = None
     last_keystroke_at: float | None = None
+    # 남은 토큰과 마지막 충전 시각. 시작 시 버킷을 가득 채운다.
+    tokens: float = 0.0
+    tokens_updated_at: float | None = None
 
     @property
     def span_seconds(self) -> float:
@@ -40,6 +48,26 @@ class TypingActivity:
         if self.started_at is None:
             return 0.0
         return time.time() - self.started_at
+
+    def credit(self, reported: int, now: float) -> int:
+        """보고된 키 입력 중 경과 시간으로 설명 가능한 만큼만 인정한다.
+
+        반환값은 이번에 인정된 개수. 정상 타이핑은 평균 속도가 한도보다 낮아
+        전량 인정되고, 개발자 도구로 개수를 부풀린 경우에만 깎인다.
+        """
+        self.reported_count += reported
+
+        elapsed = 0.0 if self.tokens_updated_at is None else max(0.0, now - self.tokens_updated_at)
+        self.tokens = min(
+            float(config.KEYSTROKE_BURST),
+            self.tokens + elapsed * config.MAX_KEYSTROKES_PER_SECOND,
+        )
+        self.tokens_updated_at = now
+
+        granted = int(min(reported, self.tokens))
+        self.tokens -= granted
+        self.count += granted
+        return granted
 
 
 class TypingSessionRegistry:
@@ -66,27 +94,37 @@ class TypingSessionRegistry:
 
     def start(self, session_id: str) -> TypingActivity | None:
         """연습 시작 시각을 기록하고 키 입력 집계를 초기화한다."""
+        now = time.time()
         with self._lock:
             activity = self._sessions.get(session_id)
             if activity is None:
                 return None
-            activity.started_at = time.time()
+            activity.started_at = now
             activity.count = 0
+            activity.reported_count = 0
             activity.first_keystroke_at = None
             activity.last_keystroke_at = None
+            # 연습 시작 시점에는 버킷을 가득 채워 둔다(첫 구간의 빠른 입력 흡수).
+            activity.tokens = float(config.KEYSTROKE_BURST)
+            activity.tokens_updated_at = now
             return activity
 
     def add_keystrokes(self, session_id: str, count: int) -> TypingActivity | None:
-        """키 입력 개수를 누적한다. 연습이 시작되지 않았으면 무시한다."""
+        """키 입력 개수를 누적한다. 연습이 시작되지 않았으면 무시한다.
+
+        보고된 개수 전부를 믿지 않고, 경과 시간으로 설명 가능한 만큼만 인정한다.
+        """
         now = time.time()
         with self._lock:
             activity = self._sessions.get(session_id)
             if activity is None or activity.started_at is None:
                 return None
-            activity.count += count
-            if activity.first_keystroke_at is None:
-                activity.first_keystroke_at = now
-            activity.last_keystroke_at = now
+
+            granted = activity.credit(count, now)
+            if granted > 0:
+                if activity.first_keystroke_at is None:
+                    activity.first_keystroke_at = now
+                activity.last_keystroke_at = now
             return activity
 
     def discard(self, session_id: str | None) -> None:

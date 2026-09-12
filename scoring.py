@@ -4,6 +4,7 @@
 무시하므로 콘솔에서 점수를 바꿔도 순위표에 반영되지 않는다.
 """
 
+import math
 import re
 
 import config
@@ -11,28 +12,40 @@ import config
 # "10218 홍길동" 형식
 ID_PATTERN = re.compile(r"^\d{5}\s[가-힣]{2,4}$")
 
-# 분당 타수 상한(물리적으로 불가능한 값 차단)
-MAX_WPM = 600
+# 분당 타수 상한. 중학생이 파이썬 기호를 섞어 칠 때 물리적으로 가능한 범위.
+MAX_WPM = 450
 
 # 정확도가 높은데 속도까지 비현실적인 조합
 HIGH_ACCURACY_THRESHOLD = 90.0
-HIGH_ACCURACY_MAX_WPM = 450
+HIGH_ACCURACY_MAX_WPM = 400
 
 # 정확도가 낮은데 속도만 높은 조합(무작위 연타)
 LOW_ACCURACY_THRESHOLD = 50.0
-LOW_ACCURACY_MAX_WPM = 300
+LOW_ACCURACY_MAX_WPM = 250
 
-# 서버가 센 키 입력 수로부터 허용할 타수의 여유 배율/여유값.
-# 네트워크 지연으로 일부 키 입력이 누락될 수 있으므로 넉넉하게 둔다.
-KEYSTROKE_WPM_FACTOR = 1.5
-KEYSTROKE_WPM_MARGIN = 30
+# 서버가 인정한 키 입력 수로부터 허용할 타수의 여유 배율/여유값.
+# 정타 수는 총 키 입력 수를 넘을 수 없으므로 배율은 1에 가까워야 한다.
+# (배율을 크게 두면 키 입력 수를 조금만 보고하고 높은 타수를 주장할 수 있다.)
+KEYSTROKE_WPM_FACTOR = 1.1
+KEYSTROKE_WPM_MARGIN = 10
+
+
+def round_half_up(value: float) -> int:
+    """0.5를 항상 올리는 반올림.
+
+    파이썬 기본 `round()`는 짝수 쪽으로 반올림하므로(1912.5 → 1912),
+    JavaScript `Math.round`(1912.5 → 1913)를 쓰는 화면과 1점씩 어긋난다.
+    화면과 저장값이 같아야 하므로 양쪽 모두 이 규칙을 쓴다.
+    (화면 쪽 구현: static/js/app.js 의 computeScore)
+    """
+    return int(math.floor(value + 0.5))
 
 
 def compute_score(wpm: int, accuracy: float) -> int:
     """PRD 공식: score = round(max(0, 타수) * (정확도/100)^2 * 100)"""
     safe_wpm = max(0, wpm)
     safe_accuracy = min(100.0, max(0.0, accuracy))
-    return round(safe_wpm * (safe_accuracy / 100.0) ** 2 * 100)
+    return round_half_up(safe_wpm * (safe_accuracy / 100.0) ** 2 * 100)
 
 
 def validate_student_id(student_id: str) -> tuple[bool, str]:

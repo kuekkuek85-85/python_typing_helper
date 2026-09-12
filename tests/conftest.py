@@ -58,8 +58,13 @@ def practice_flow(app, client):
         def activity(self):
             return app.extensions['typing_sessions'].get(self.session_id)
 
-        def simulate(self, keystrokes=600, elapsed=305.0, span=290.0):
-            """실제로 연습한 것과 같은 상태를 만든다(시간을 과거로 조정)."""
+        def simulate(self, keystrokes=1500, elapsed=305.0, span=290.0):
+            """실제로 연습한 것과 같은 상태를 만든다(시간을 과거로 조정).
+
+            기본값은 5분에 1500타(분당 300타)를 입력한 학생이다. 서버는 정타 수가
+            총 키 입력 수를 넘을 수 없다고 보므로, 주장하는 타수보다 키 입력 수가
+            충분히 많아야 한다.
+            """
             activity = self.activity()
             now = time.time()
             activity.started_at = now - elapsed

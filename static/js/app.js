@@ -489,7 +489,14 @@
         if (elements.points) elements.points.textContent = accumulatedPoints;
     }
 
-    /** 서버(scoring.compute_score)와 동일한 공식. */
+    /**
+     * 서버(scoring.compute_score)와 동일한 공식.
+     *
+     * Math.round는 0.5를 항상 올린다. 서버도 같은 규칙을 쓰도록
+     * scoring.round_half_up()을 사용한다(파이썬 기본 round()는 짝수 쪽으로
+     * 반올림해서 34타·정확도 75%처럼 정확히 .5가 되는 값에서 1점 어긋났다).
+     * 한쪽 규칙만 바꾸면 화면 점수와 저장 점수가 달라진다.
+     */
     function computeScore(wpm, accuracy) {
         var safeWpm = Math.max(0, wpm);
         var safeAccuracy = Math.min(100, Math.max(0, accuracy));

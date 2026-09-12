@@ -30,25 +30,82 @@ class FakeDocumentReference:
         self._collection.documents[self.id] = dict(data)
 
 
+class FakeAggregationResult:
+    def __init__(self, value):
+        self.value = value
+
+
 class FakeQuery:
-    def __init__(self, documents, predicate=None):
+    """Firestore Query 흉내. order_by 지원 여부를 테스트에서 바꿀 수 있다."""
+
+    def __init__(self, documents, predicate=None, supports_order_by=True,
+                 order_field=None, order_desc=False, limit_count=None, reads=None):
         self._documents = documents
         self._predicate = predicate
+        self._supports_order_by = supports_order_by
+        self._order_field = order_field
+        self._order_desc = order_desc
+        self._limit = limit_count
+        # 읽은 문서 수를 기록해 "전체를 읽지 않는다"를 검증한다.
+        self.reads = reads if reads is not None else []
+
+    def _clone(self, **overrides):
+        params = dict(documents=self._documents, predicate=self._predicate,
+                      supports_order_by=self._supports_order_by,
+                      order_field=self._order_field, order_desc=self._order_desc,
+                      limit_count=self._limit, reads=self.reads)
+        params.update(overrides)
+        return FakeQuery(**params)
+
+    def _matching(self):
+        items = [(doc_id, data) for doc_id, data in self._documents.items()
+                 if self._predicate is None or self._predicate(data)]
+        if self._order_field:
+            items.sort(key=lambda item: item[1].get(self._order_field, 0),
+                       reverse=self._order_desc)
+        if self._limit is not None:
+            items = items[:self._limit]
+        return items
 
     def stream(self):
-        for doc_id, data in self._documents.items():
-            if self._predicate is None or self._predicate(data):
-                yield FakeDocumentSnapshot(doc_id, data)
+        items = self._matching()
+        self.reads.append(len(items))
+        for doc_id, data in items:
+            yield FakeDocumentSnapshot(doc_id, data)
+
+    def order_by(self, field, direction=None):
+        if not self._supports_order_by:
+            # 실제 Firestore는 복합 색인이 없으면 FAILED_PRECONDITION을 던진다.
+            raise RuntimeError('The query requires an index.')
+        return self._clone(order_field=field, order_desc=(direction == 'DESCENDING'))
 
     def limit(self, count):
-        limited = dict(list(self._documents.items())[:count])
-        return FakeQuery(limited, self._predicate)
+        return self._clone(limit_count=count)
+
+    def count(self, alias=None):
+        return FakeAggregationQuery(self)
+
+
+class FakeAggregationQuery:
+    def __init__(self, query):
+        self._query = query
+
+    def get(self):
+        total = len(self._query._matching())
+        # 집계 쿼리는 문서를 읽지 않는다(읽기 기록을 남기지 않음).
+        return [[FakeAggregationResult(total)]]
 
 
 class FakeCollection:
-    def __init__(self):
+    def __init__(self, supports_order_by=True):
         self.documents = {}
+        self.supports_order_by = supports_order_by
+        self.reads = []
         self._counter = 0
+
+    @property
+    def documents_read(self) -> int:
+        return sum(self.reads)
 
     def document(self, doc_id=None):
         if doc_id is None:
@@ -56,31 +113,44 @@ class FakeCollection:
             doc_id = f'doc{self._counter}'
         return FakeDocumentReference(self, doc_id)
 
+    def _query(self, predicate=None):
+        return FakeQuery(self.documents, predicate,
+                         supports_order_by=self.supports_order_by, reads=self.reads)
+
     def where(self, *args, filter=None):  # noqa: A002 - Firestore SDK 시그니처를 따른다
         if filter is not None:
             field, _, value = filter.field_path, filter.op_string, filter.value
         else:
             field, _, value = args
-        return FakeQuery(self.documents, lambda data: data.get(field) == value)
+        return self._query(lambda data: data.get(field) == value)
 
     def limit(self, count):
-        return FakeQuery(self.documents).limit(count)
+        return self._query().limit(count)
 
     def stream(self):
-        return FakeQuery(self.documents).stream()
+        return self._query().stream()
 
 
-@pytest.fixture
-def firestore_store():
+def _make_store(collection, cache_ttl_seconds=0):
     """FirestoreStore를 실제 초기화 없이 가짜 컬렉션에 연결한다."""
     instance = store.FirestoreStore.__new__(store.FirestoreStore)
-    store.RecordStore.__init__(instance, cache_ttl_seconds=0)
-    collection = FakeCollection()
-    # _collection 프로퍼티를 가짜 컬렉션으로 대체한다.
+    store.RecordStore.__init__(instance, cache_ttl_seconds=cache_ttl_seconds)
+    instance._head_fetch_warned = False
     instance.__class__ = type('TestFirestoreStore', (store.FirestoreStore,),
                               {'_collection': property(lambda self: collection)})
     instance.fake_collection = collection
     return instance
+
+
+@pytest.fixture
+def firestore_store():
+    return _make_store(FakeCollection())
+
+
+@pytest.fixture
+def firestore_store_without_index():
+    """복합 색인이 없는 프로젝트(order_by 실패)를 흉내 낸다."""
+    return _make_store(FakeCollection(supports_order_by=False))
 
 
 def test_field_filter_is_available():
@@ -158,6 +228,90 @@ def test_missing_fields_do_not_crash(firestore_store):
 
 def test_ping_uses_limit_query(firestore_store):
     assert firestore_store.ping() is True
+
+
+# --- 읽는 문서 수 제한 (Codex P1: Firestore 조회를 서버 측에서 제한) ---------
+def _seed(record_store, count, mode='자리'):
+    for index in range(count):
+        record_store.add(student_id=f'1{index:04d} 홍길동', mode=mode, wpm=100,
+                         accuracy=90.0, score=index, duration_sec=300)
+    record_store.fake_collection.reads.clear()
+    record_store.invalidate()
+
+
+def test_count_for_mode_uses_aggregation_without_reading_documents(firestore_store):
+    _seed(firestore_store, 50)
+
+    assert firestore_store.count_for_mode('자리') == 50
+    # 집계 쿼리이므로 문서를 한 건도 읽지 않아야 한다.
+    assert firestore_store.fake_collection.documents_read == 0
+
+
+def test_top_reads_only_head_documents(firestore_store):
+    _seed(firestore_store, 300)
+
+    top = firestore_store.top('자리', 10)
+
+    assert [record['score'] for record in top] == list(range(299, 289, -1))
+    read = firestore_store.fake_collection.documents_read
+    assert 0 < read <= store.HEAD_FETCH_MAX, read
+    # 전체(300건)를 읽지 않는다.
+    assert read < 300
+
+
+def test_page_total_does_not_read_all_documents(firestore_store):
+    _seed(firestore_store, 300)
+
+    records, total = firestore_store.page('자리', limit=1, offset=0)
+
+    assert total == 300
+    assert len(records) == 1
+    assert firestore_store.fake_collection.documents_read < 300
+
+
+def test_full_view_still_returns_every_record(firestore_store):
+    _seed(firestore_store, 300)
+
+    records, total = firestore_store.page('자리', limit=2000, offset=0)
+
+    assert total == 300
+    assert len(records) == 300
+
+
+def test_falls_back_to_full_read_without_composite_index(firestore_store_without_index):
+    _seed(firestore_store_without_index, 30)
+
+    top = firestore_store_without_index.top('자리', 10)
+
+    # 색인이 없어도 결과는 동일해야 한다(앱이 그대로 동작).
+    assert [record['score'] for record in top] == list(range(29, 19, -1))
+    assert firestore_store_without_index._head_fetch_warned is True
+
+
+def test_head_and_full_read_agree_on_ordering(firestore_store, firestore_store_without_index):
+    """색인이 있을 때와 없을 때 순위가 같아야 한다(동점자 포함)."""
+    for record_store in (firestore_store, firestore_store_without_index):
+        for index in range(40):
+            record_store.add(student_id=f'2{index:04d} 김영희', mode='자리', wpm=100 + index % 3,
+                             accuracy=90.0, score=500 if index < 15 else index,
+                             duration_sec=300)
+        record_store.invalidate()
+
+    with_index = [r['student_id'] for r in firestore_store.top('자리', 10)]
+    without_index = [r['student_id'] for r in firestore_store_without_index.top('자리', 10)]
+    assert with_index == without_index
+
+
+def test_cache_invalidated_for_derived_keys(firestore_store):
+    record_store = _make_store(firestore_store.fake_collection, cache_ttl_seconds=60)
+    _seed(record_store, 5)
+
+    assert record_store.count_for_mode('자리') == 5
+    record_store.add(student_id='19999 새기록', mode='자리', wpm=100, accuracy=90.0,
+                     score=999, duration_sec=300)
+    # add()가 파생 캐시(count/head)까지 비워야 새 기록이 보인다.
+    assert record_store.count_for_mode('자리') == 6
+    assert record_store.top('자리', 1)[0]['student_id'] == '19999 새기록'
 
 
 def test_cache_reduces_reads():

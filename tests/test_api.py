@@ -76,14 +76,18 @@ def test_keystroke_requires_started_practice(client, practice_flow):
 
 
 def test_keystrokes_are_counted_and_capped(client, practice_flow):
+    """부풀린 키 입력 개수는 경과 시간으로 설명 가능한 만큼만 인정된다."""
     practice_flow.open().start()
 
     client.post('/api/keystroke', json={'count': 10, 'practice_token': practice_flow.token})
     payload = client.post('/api/keystroke',
                           json={'count': 10_000, 'practice_token': practice_flow.token}).get_json()
 
-    # 한 번에 보고할 수 있는 최대치(200)로 제한된다.
-    assert payload['count'] == 210
+    # 시작 직후이므로 버킷 크기(기본 80타)를 넘을 수 없다.
+    assert payload['count'] <= config.KEYSTROKE_BURST
+    assert payload['count'] < 10_000
+    # app.py가 요청당 200으로 먼저 깎고(1차), sessions가 경과 시간으로 다시 깎는다(2차).
+    assert practice_flow.activity().reported_count == 210
 
 
 # --- 기록 저장 -----------------------------------------------------------
@@ -143,21 +147,29 @@ def test_save_rejects_short_typing_span(practice_flow):
 
 
 def test_save_rejects_wpm_not_supported_by_keystrokes(practice_flow):
+    """키 입력 200타로 분당 400타를 주장할 수는 없다(정타 수 <= 총 키 입력 수)."""
     practice_flow.open().start().simulate(keystrokes=200)
-    response = practice_flow.save(wpm=500, accuracy=60.0)
+    response = practice_flow.save(wpm=400, accuracy=60.0)
     assert response.status_code == 400
     assert '입력 기록' in response.get_json()['error']
 
 
 def test_save_rejects_unrealistic_metrics(practice_flow):
     practice_flow.open().start().simulate(keystrokes=5000)
-    response = practice_flow.save(wpm=550, accuracy=99.0)
+    response = practice_flow.save(wpm=430, accuracy=99.0)
     assert response.status_code == 400
     assert '비현실적' in response.get_json()['error']
 
 
+def test_save_rejects_wpm_above_absolute_ceiling(practice_flow):
+    practice_flow.open().start().simulate(keystrokes=5000)
+    response = practice_flow.save(wpm=scoring.MAX_WPM + 1, accuracy=70.0)
+    assert response.status_code == 400
+    assert '분당 타수' in response.get_json()['error']
+
+
 def test_token_is_single_use(practice_flow):
-    practice_flow.open().start().simulate(keystrokes=800)
+    practice_flow.open().start().simulate()
     assert practice_flow.save().status_code == 201
 
     # 같은 토큰으로 다시 저장할 수 없다.
@@ -168,10 +180,10 @@ def test_rate_limit_blocks_repeated_submissions(app, practice_flow):
     app.extensions['rate_limiter'].reset()
 
     for _ in range(config.MAX_SUBMISSIONS_PER_WINDOW):
-        practice_flow.open().start().simulate(keystrokes=800)
+        practice_flow.open().start().simulate()
         assert practice_flow.save().status_code == 201
 
-    practice_flow.open().start().simulate(keystrokes=800)
+    practice_flow.open().start().simulate()
     response = practice_flow.save()
     assert response.status_code == 429
 
@@ -180,17 +192,17 @@ def test_failed_validation_does_not_consume_rate_limit(app, practice_flow):
     app.extensions['rate_limiter'].reset()
 
     for _ in range(5):
-        practice_flow.open().start().simulate(keystrokes=800)
+        practice_flow.open().start().simulate()
         assert practice_flow.save(student_id='bad id').status_code == 400
 
-    practice_flow.open().start().simulate(keystrokes=800)
+    practice_flow.open().start().simulate()
     assert practice_flow.save().status_code == 201
 
 
 # --- 조회 API ------------------------------------------------------------
 def test_top_and_pagination_apis(client, practice_flow, app):
     app.extensions['rate_limiter'].reset()
-    practice_flow.open().start().simulate(keystrokes=800)
+    practice_flow.open().start().simulate()
     assert practice_flow.save().status_code == 201
 
     top = client.get('/api/records/top?mode=자리').get_json()
