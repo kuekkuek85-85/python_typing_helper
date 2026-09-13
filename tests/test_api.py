@@ -228,7 +228,10 @@ def test_records_api_clamps_limit_and_offset(client):
     assert payload['pagination']['offset'] == 0
 
 
-def test_stats_api(client):
-    payload = client.get('/api/records/stats').get_json()
-    assert payload['success'] is True
-    assert payload['total_records'] == 0
+def test_stats_endpoint_is_removed(client):
+    """전체 통계 API는 v0.8에서 제거했다(모든 기록을 읽는데 쓰는 화면이 없었음).
+
+    다시 추가한다면 저장 시 요약 문서를 갱신하는 방식이어야 한다.
+    """
+    response = client.get('/api/records/stats')
+    assert response.status_code == 404

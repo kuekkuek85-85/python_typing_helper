@@ -24,7 +24,6 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import config
-import content
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +75,7 @@ def _sort_key(record: dict):
 
 
 class RecordStore:
-    """저장소 공통 로직(정렬·페이지네이션·통계·캐시)."""
+    """저장소 공통 로직(정렬·페이지네이션·캐시)."""
 
     backend = 'base'
 
@@ -138,34 +137,6 @@ class RecordStore:
     def page(self, mode: str, limit: int, offset: int) -> tuple[list[dict], int]:
         records = self.records_for_mode(mode)
         return records[offset:offset + limit], len(records)
-
-    def stats(self) -> dict:
-        """전체 통계.
-
-        ⚠️ **모든 모드의 문서를 전부 읽는다.** 평균과 고유 학생 수는 집계 쿼리로
-        구할 수 없기 때문이다(Firestore에 distinct 집계가 없다). 현재 이 함수를
-        호출하는 화면이 없으므로 실제 비용은 발생하지 않는다.
-
-        **화면에 연결하기 전에 반드시 다시 설계해야 한다.** 기록을 저장할 때
-        요약 문서(건수·합계·학생 목록)를 함께 갱신하고 그 문서만 읽는 방식이
-        맞다. 교사 대시보드(SRD v0.9)에서 이 수치를 실제로 쓸 때 함께 만든다.
-        """
-        all_records: list[dict] = []
-        for mode in content.PRACTICE_MODES:
-            all_records.extend(self.records_for_mode(mode))
-
-        total_records = len(all_records)
-        students = {record['student_id'] for record in all_records}
-        avg_wpm = (sum(r['wpm'] for r in all_records) / total_records) if total_records else 0.0
-        avg_accuracy = ((sum(r['accuracy'] for r in all_records) / total_records)
-                        if total_records else 0.0)
-
-        return {
-            'total_students': len(students),
-            'total_records': total_records,
-            'avg_wpm': avg_wpm,
-            'avg_accuracy': avg_accuracy,
-        }
 
     def invalidate(self, mode: str | None = None) -> None:
         """캐시를 비운다. 모드별 파생 캐시(head/count)도 함께 지운다."""

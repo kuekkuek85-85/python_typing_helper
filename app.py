@@ -340,16 +340,10 @@ def _register_routes(app: Flask) -> None:
             },
         })
 
-    @app.route('/api/records/stats')
-    def get_statistics():
-        """전체 통계."""
-        try:
-            stats = _store().stats()
-        except Exception as error:  # noqa: BLE001
-            logger.exception('통계 조회 실패: %s', error)
-            return jsonify({'error': '통계를 불러오지 못했습니다.'}), 503
-
-        return jsonify({'success': True, **stats})
+    # 참고: 전체 통계 API(`GET /api/records/stats`)는 v0.8에서 제거했다.
+    # 호출하는 화면이 없는데 평균·고유 학생 수를 구하느라 모든 기록을 읽었다.
+    # 교사 대시보드(SRD v0.9)에서 이 수치가 실제로 필요해지면, 그때 반·기간 축으로
+    # 설계하고 저장 시 요약 문서를 갱신하는 방식으로 다시 만든다.
 
     @app.route('/api/practice-text/<mode>')
     def get_practice_text(mode):

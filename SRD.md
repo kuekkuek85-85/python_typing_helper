@@ -127,6 +127,10 @@
 - [x] **인증 없는 관리자 API 제거**: 누구나 전체 기록을 수정할 수 있었던
       `/api/admin/recalculate-wpm` 삭제
 - [x] **테스트 데이터 자동 삽입 제거**: 운영 DB가 오염되지 않도록
+- [x] **미사용 통계 API 제거**: `GET /api/records/stats`는 호출하는 화면이 없는데
+      평균·고유 학생 수를 구하느라 모든 기록을 읽었다. 교사 대시보드(v0.9)에서
+      실제로 필요해지면 반·기간 축으로 설계하고 저장 시 요약 문서를 갱신하는
+      방식으로 다시 만든다.
 - [x] **세션 쿠키 강화**: HttpOnly, SameSite=Lax, `SESSION_COOKIE_SECURE` 옵션
 - [x] **토큰 비교**: `secrets.compare_digest` 사용
 

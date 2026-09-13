@@ -1,4 +1,4 @@
-"""저장소(정렬·페이지네이션·통계) 테스트."""
+"""저장소(정렬·페이지네이션) 테스트."""
 
 from datetime import datetime, timedelta, timezone
 
@@ -53,28 +53,6 @@ def test_mode_isolation_and_pagination(record_store):
     words, words_total = record_store.page('낱말', limit=10, offset=0)
     assert words_total == 1
     assert words[0]['student_id'] == '10999 김철수'
-
-
-def test_stats_across_modes(record_store):
-    _add(record_store, '10401 가나다', mode='자리', wpm=100, accuracy=90.0)
-    _add(record_store, '10401 가나다', mode='낱말', wpm=200, accuracy=100.0)
-    _add(record_store, '10402 라마바', mode='자리', wpm=300, accuracy=80.0)
-
-    stats = record_store.stats()
-    assert stats['total_records'] == 3
-    assert stats['total_students'] == 2
-    assert stats['avg_wpm'] == 200.0
-    assert stats['avg_accuracy'] == 90.0
-
-
-def test_stats_on_empty_store(record_store):
-    stats = record_store.stats()
-    assert stats == {
-        'total_students': 0,
-        'total_records': 0,
-        'avg_wpm': 0.0,
-        'avg_accuracy': 0.0,
-    }
 
 
 def test_records_survive_reload(record_store, tmp_path):

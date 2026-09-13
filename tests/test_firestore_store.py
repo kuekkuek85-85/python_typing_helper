@@ -189,7 +189,7 @@ def test_mode_filter_excludes_other_modes(firestore_store):
 
     assert len(firestore_store.top('자리')) == 1
     assert len(firestore_store.top('낱말')) == 1
-    assert firestore_store.stats()['total_records'] == 2
+    assert firestore_store.count_for_mode('자리') + firestore_store.count_for_mode('낱말') == 2
 
 
 def test_sorting_applied_to_firestore_results(firestore_store):
