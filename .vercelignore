@@ -1,0 +1,14 @@
+# Vercel 배포에 올릴 필요가 없는 것들 (함수 크기와 배포 시간을 줄인다)
+.venv/
+data/
+tests/
+docs/
+*.md
+!static/vendor/README.md
+.github/
+firestore.rules
+firestore.indexes.json
+Procfile
+.replit
+uv.lock
+pyproject.toml

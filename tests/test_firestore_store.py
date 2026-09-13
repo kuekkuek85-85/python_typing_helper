@@ -357,7 +357,7 @@ def test_create_store_prefers_firestore_when_credentials_exist(monkeypatch, tmp_
     monkeypatch.setenv('FIREBASE_SERVICE_ACCOUNT_JSON', '{"type": "service_account"}')
 
     created = []
-    monkeypatch.setattr(store, '_create_firestore_client',
+    monkeypatch.setattr(store, 'create_firestore_client',
                         lambda: created.append('client') or object())
 
     assert store.create_store().backend == 'firestore'
@@ -372,7 +372,7 @@ def test_create_store_falls_back_when_firestore_init_fails(monkeypatch, tmp_path
     def boom():
         raise RuntimeError('자격 증명이 잘못되었습니다')
 
-    monkeypatch.setattr(store, '_create_firestore_client', boom)
+    monkeypatch.setattr(store, 'create_firestore_client', boom)
 
     # 자격 증명이 잘못되어도 앱이 뜨지 않는 일은 없어야 한다.
     assert store.create_store().backend == 'local'

@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import secrets
+from datetime import timedelta
 
 from flask import Flask, jsonify, render_template, request, session
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -16,12 +17,16 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 import config
 import content
 import scoring
+import sessions as sessions_module
 import store as store_module
-from sessions import RateLimiter, TypingSessionRegistry
 
 logger = logging.getLogger(__name__)
 
-# 한 번의 요청으로 보고할 수 있는 최대 키 입력 수(클라이언트는 약 2초마다 묶어 보낸다).
+# 한 번의 요청으로 보고할 수 있는 최대 키 입력 수.
+# 클라이언트는 config.KEYSTROKE_FLUSH_MS 간격으로 묶어 보낸다. 그 사이에 사람이
+# 칠 수 있는 양보다 넉넉해야 하지만(기본 10초 × 8타/초 = 80), 무한정 받아 주면
+# 한 번의 요청으로 큰 수를 주장할 수 있으므로 상한을 둔다. 실제 인정량은
+# 토큰 버킷이 다시 한 번 깎는다(sessions.TypingActivity.credit).
 MAX_KEYSTROKES_PER_REQUEST = 200
 
 
@@ -43,7 +48,8 @@ def _resolve_secret_key() -> str:
     return secrets.token_urlsafe(32)
 
 
-def create_app(record_store: store_module.RecordStore | None = None) -> Flask:
+def create_app(record_store: store_module.RecordStore | None = None,
+               typing_sessions=None, rate_limiter=None) -> Flask:
     _configure_logging()
 
     app = Flask(__name__)
@@ -55,15 +61,21 @@ def create_app(record_store: store_module.RecordStore | None = None) -> Flask:
         SESSION_COOKIE_SECURE=config.SESSION_COOKIE_SECURE,
         # 이 앱의 요청 본문은 모두 작은 JSON이다. 과도한 본문은 미리 차단한다.
         MAX_CONTENT_LENGTH=32 * 1024,
+        # 서버리스에서는 static/도 이 함수가 서빙한다(vercel.json이 모든 경로를
+        # 넘긴다). Bootstrap 사본이 200KB쯤 되므로 브라우저가 캐시하게 둔다.
+        SEND_FILE_MAX_AGE_DEFAULT=timedelta(days=7),
     )
     app.json.ensure_ascii = False
 
     app.extensions['record_store'] = record_store or store_module.create_store()
-    app.extensions['typing_sessions'] = TypingSessionRegistry()
-    app.extensions['rate_limiter'] = RateLimiter()
+    app.extensions['typing_sessions'] = (
+        typing_sessions or sessions_module.create_session_registry())
+    app.extensions['rate_limiter'] = rate_limiter or sessions_module.create_rate_limiter()
 
     _register_routes(app)
-    logger.info('저장소 백엔드: %s', app.extensions['record_store'].backend)
+    logger.info('저장소 백엔드: %s, 연습 세션 백엔드: %s',
+                app.extensions['record_store'].backend,
+                app.extensions['typing_sessions'].backend)
     return app
 
 
@@ -73,12 +85,12 @@ def _store() -> store_module.RecordStore:
     return current_app.extensions['record_store']
 
 
-def _typing_sessions() -> TypingSessionRegistry:
+def _typing_sessions():
     from flask import current_app
     return current_app.extensions['typing_sessions']
 
 
-def _rate_limiter() -> RateLimiter:
+def _rate_limiter():
     from flask import current_app
     return current_app.extensions['rate_limiter']
 
@@ -148,6 +160,7 @@ def _register_routes(app: Flask) -> None:
             mode_info=content.PRACTICE_MODES[mode],
             practice_token=practice_token,
             practice_seconds=config.PRACTICE_SECONDS,
+            keystroke_flush_ms=config.KEYSTROKE_FLUSH_MS,
         )
 
     @app.route('/health')
@@ -159,6 +172,8 @@ def _register_routes(app: Flask) -> None:
             'status': 'healthy' if connected else 'unhealthy',
             'backend': record_store.backend,
             'database_connected': connected,
+            # 여러 인스턴스로 뜨는 배포에서 memory면 연습 세션이 사라진다.
+            'session_backend': _typing_sessions().backend,
         }), (200 if connected else 503)
 
     @app.route('/api/practice/start', methods=['POST'])

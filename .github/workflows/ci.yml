@@ -43,7 +43,7 @@ jobs:
           pip install pytest pyflakes
 
       - name: 정적 검사 (pyflakes)
-        run: pyflakes *.py tests/*.py
+        run: pyflakes *.py api/*.py tests/*.py
 
       - name: 테스트
         run: pytest -q

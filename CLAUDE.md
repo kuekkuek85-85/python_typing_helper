@@ -27,7 +27,8 @@ STORE_BACKEND=local .venv/bin/python -m pytest -q
 | `config.py` | 환경 변수 기반 설정(연습 시간, 부정행위 방지 기준 등) |
 | `content.py` | 4개 연습 모드 정의와 연습 텍스트 생성 |
 | `scoring.py` | 학번 검증, **점수 계산**, 기록 무결성 검증 |
-| `sessions.py` | 연습 세션 추적(키 입력 집계)과 제출 빈도 제한 — **프로세스 메모리** |
+| `sessions.py` | 연습 세션 추적(키 입력 집계)과 제출 빈도 제한. 메모리 / Firestore 백엔드 |
+| `api/index.py` | Vercel 서버리스 엔트리 포인트(`vercel.json`이 모든 경로를 넘긴다) |
 | `store.py` | 기록 저장소. Firestore 백엔드 + 로컬 JSON 백엔드 |
 | `main.py` | WSGI 엔트리 포인트 |
 | `static/js/app.js` | 연습 화면 로직(타이머, 하이라이트, 통계, 저장) |
@@ -37,11 +38,27 @@ STORE_BACKEND=local .venv/bin/python -m pytest -q
 
 ## 꼭 기억할 규칙
 
-### 1) 워커는 반드시 1개
-`sessions.py`의 연습 세션·키 입력 집계가 프로세스 메모리에 있다. 워커가 2개
-이상이면 키 입력을 받은 워커와 저장 요청을 받은 워커가 달라져 "타이핑 세션을
-찾을 수 없습니다" 오류가 난다. 동시 접속은 스레드(`--threads`)로 처리한다.
-워커를 늘려야 할 규모가 되면 세션 상태를 Firestore나 Redis로 옮겨야 한다.
+### 1) 연습 세션은 요청 사이에 이어져야 한다
+5분 연습 한 번은 **약 33개의 요청**으로 이루어지고(시작 1 + 키 입력 보고 30여 개 +
+저장 1), 이들이 같은 집계를 보아야 저장이 된다. 그 집계를 어디에 두는지가
+`config.SESSION_BACKEND`다.
+
+- `memory`: 프로세스 메모리(`sessions.TypingSessionRegistry`). 빠르고 공짜지만
+  **워커/인스턴스가 1개일 때만** 동작한다. 동시 접속은 스레드로 처리한다.
+- `firestore`: Firestore 문서(`sessions.FirestoreSessionRegistry`). 서버리스
+  (Vercel)용. 인스턴스가 몇 개로 늘어나도 된다.
+- `auto`(기본): `config.SERVERLESS`가 참이면 firestore, 아니면 memory.
+
+잘못 고르면 증상은 하나다 — 저장할 때 "타이핑 세션을 찾을 수 없습니다".
+`/health`의 `session_backend`로 확인한다.
+
+**두 백엔드는 상태 전이 함수(`_apply_start`, `_apply_keystrokes`)를 공유한다.**
+부정행위 방지 규칙이 백엔드마다 달라지면 안 되기 때문이다. 규칙을 고칠 때는
+그 함수만 고치고, 백엔드는 건드리지 않는다.
+
+토큰 버킷은 읽고-고쳐-쓰는 연산이라 Firestore 백엔드에서는 **트랜잭션**으로
+감싼다(`sessions._mutate_document`). 이걸 빼면 동시에 도착한 두 요청이 서로의
+차감을 덮어써 인정량이 부풀 수 있다.
 
 ### 2) 점수와 연습 시간은 서버가 계산한다
 - 점수: `scoring.compute_score(wpm, accuracy)` = `round(타수 × (정확도/100)² × 100)`
@@ -57,7 +74,10 @@ STORE_BACKEND=local .venv/bin/python -m pytest -q
 ### 3) 연습 흐름 (라우트 순서)
 1. `GET /practice/<mode>` → 1회용 토큰 + session_id 발급, 세션 등록
 2. `POST /api/practice/start` → 서버 측 연습 시작 시각 기록
-3. `POST /api/keystroke` → 키 입력 수를 약 2초 단위로 묶어서 보고
+3. `POST /api/keystroke` → 키 입력 수를 `config.KEYSTROKE_FLUSH_MS`(기본 10초)
+   단위로 묶어서 보고. 이 간격은 서버가 정해 연습 화면에 내려준다
+   (`window.keystrokeFlushMs`). Firestore 백엔드에서는 **이 간격이 곧 쓰기
+   횟수**이므로 줄이기 전에 DEPLOYMENT.md의 비용 계산을 먼저 본다.
 4. `POST /api/records` → 검증 후 저장, 토큰 폐기(1회용)
 
 ### 4) 부정행위 방지 (모두 `config.py`에서 조정 가능)

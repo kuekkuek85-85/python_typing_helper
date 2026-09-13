@@ -54,7 +54,8 @@ user approval before proceeding with any tasks or modifications.
 - **API Design**: 연습 텍스트, 연습 시작/키 입력 보고, 기록 저장·조회 REST 엔드포인트
 - **Data Validation**: 학번 형식(5자리 + 한글 이름)을 클라이언트·서버 양쪽에서 검증
 - **Business Logic**: 분당 타수(정타 수 / 경과 분), 정확도, 점수 계산은 서버가 최종 결정
-- **Process State**: 연습 세션·키 입력 집계는 프로세스 메모리 → **워커 1개 필수**
+- **Process State**: 연습 세션·키 입력 집계는 `SESSION_BACKEND`에 따라 프로세스
+  메모리 또는 Firestore. 메모리일 때는 **워커 1개 필수**, Firestore면 제약 없음
 
 ## Practice Content Management
 - **Content Structure**: 난이도별 4개 모드 (`content.py`)

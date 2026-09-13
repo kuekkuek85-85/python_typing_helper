@@ -191,7 +191,7 @@ class FirestoreStore(RecordStore):
         self._collection_name = collection_name or config.FIRESTORE_COLLECTION
         # 복합 색인이 없다는 경고는 한 번만 남긴다.
         self._head_fetch_warned = False
-        self._client = _create_firestore_client()
+        self._client = create_firestore_client()
 
     @property
     def _collection(self):
@@ -433,7 +433,7 @@ def _firebase_credential():
     return None
 
 
-def _create_firestore_client():
+def create_firestore_client():
     import firebase_admin
     from firebase_admin import firestore
 

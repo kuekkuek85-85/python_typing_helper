@@ -59,8 +59,45 @@ KEYSTROKE_BURST = _env_int("KEYSTROKE_BURST", 80)
 RATE_LIMIT_WINDOW = _env_int("RATE_LIMIT_WINDOW", 300)
 MAX_SUBMISSIONS_PER_WINDOW = _env_int("MAX_SUBMISSIONS_PER_WINDOW", 3)
 
-# 메모리에 남은 연습 세션을 정리하는 기준 시간(초).
+# 남은 연습 세션을 정리하는 기준 시간(초).
 SESSION_TTL_SECONDS = _env_int("SESSION_TTL_SECONDS", 3 * 3600)
+
+# 브라우저가 키 입력 수를 묶어서 보고하는 간격(밀리초).
+# 서버가 정하고 연습 화면에 내려준다(static/js/app.js는 이 값을 그대로 쓴다).
+#
+# 이 값이 **Firestore 쓰기 횟수를 그대로 결정한다.** 5분 연습 기준으로
+# 학생 한 명당 쓰기 횟수 = PRACTICE_SECONDS / (KEYSTROKE_FLUSH_MS/1000).
+# 10초면 30회, 2초면 150회다. 한 반 30명이면 각각 900회와 4500회이고,
+# Firestore 무료 한도는 하루 2만 회다.
+#
+# 낮추면 부정행위 판정이 조금 더 촘촘해지지만 쓰기 비용이 그만큼 늘어난다.
+# 올릴 때는 KEYSTROKE_BURST를 함께 확인해야 한다 — 한 번에 보고되는 양이
+# 버킷 크기를 넘으면 정상 타이핑도 깎인다(sessions.TypingActivity.credit).
+KEYSTROKE_FLUSH_MS = _env_int("KEYSTROKE_FLUSH_MS", 10_000)
+
+# --- 연습 세션 저장소 ------------------------------------------------------
+# 연습 세션(키 입력 집계)과 제출 빈도 제한을 어디에 둘지 정한다.
+#
+# "memory"    : 프로세스 메모리. **단일 워커에서만** 동작한다.
+# "firestore" : Firestore 문서. 요청마다 프로세스가 달라지는 서버리스에서 쓴다.
+# "auto"(기본): 서버리스 환경(Vercel)이 감지되면 firestore, 아니면 memory.
+#
+# auto가 잘못 고르면 증상이 "타이핑 세션을 찾을 수 없습니다"로만 나타나 원인을
+# 찾기 어렵다. 배포 환경에서는 값을 명시하는 편이 안전하다.
+SESSION_BACKEND = os.environ.get("SESSION_BACKEND", "auto").strip().lower()
+
+# 서버리스 환경 감지용. Vercel은 런타임에 VERCEL=1을 넣어 준다.
+SERVERLESS = bool(os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
+
+FIRESTORE_SESSION_COLLECTION = os.environ.get(
+    "FIRESTORE_SESSION_COLLECTION", "practice_sessions")
+FIRESTORE_RATE_LIMIT_COLLECTION = os.environ.get(
+    "FIRESTORE_RATE_LIMIT_COLLECTION", "rate_limits")
+
+# 같은 문서에 요청이 겹쳤을 때 트랜잭션을 다시 시도하는 횟수(SDK 기본값은 5).
+# 한 학생의 키 입력 보고는 10초 간격이라 원래 겹치지 않지만, 네트워크가 잠시
+# 막혔다가 여러 묶음이 한꺼번에 도착하면 경합한다.
+FIRESTORE_MAX_ATTEMPTS = _env_int("FIRESTORE_MAX_ATTEMPTS", 12)
 
 # --- 저장소 ---------------------------------------------------------------
 # "auto"  : Firebase 자격 증명이 있으면 Firestore, 없으면 로컬 JSON 파일

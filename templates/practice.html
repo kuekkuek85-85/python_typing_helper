@@ -320,6 +320,7 @@
         window.currentMode = {{ mode | tojson }};
         window.practiceToken = {{ practice_token | tojson }};
         window.practiceSeconds = {{ practice_seconds | tojson }};
+        window.keystrokeFlushMs = {{ keystroke_flush_ms | tojson }};
     </script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
