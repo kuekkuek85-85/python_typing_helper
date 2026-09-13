@@ -1,0 +1,64 @@
+name: 테스트
+
+# PR과 main 푸시에서 자동 검증한다.
+# Firebase 자격 증명 없이 동작하도록 STORE_BACKEND=local 로 실행하므로
+# 시크릿 설정이 필요 없고, 실제 Firestore를 건드리지 않는다.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: pytest
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      STORE_BACKEND: local
+      SESSION_SECRET: ci-test-secret
+      LOG_LEVEL: WARNING
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: 파이썬 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+          cache: pip
+
+      - name: 의존성 설치
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pyflakes
+
+      - name: 정적 검사 (pyflakes)
+        run: pyflakes *.py tests/*.py
+
+      - name: 테스트
+        run: pytest -q
+
+      - name: 로컬 저장소 없이도 앱이 뜨는지 확인
+        run: |
+          set -euo pipefail
+          # 임포트만으로 죽는 문제(설정 누락, 순환 임포트 등)를 잡는다.
+          python -c "
+          from app import create_app
+          app = create_app()
+          client = app.test_client()
+          health = client.get('/health')
+          assert health.status_code == 200, health.get_json()
+          assert health.get_json()['backend'] == 'local'
+          assert client.get('/').status_code == 200
+          print('앱 기동 확인:', health.get_json())
+          "

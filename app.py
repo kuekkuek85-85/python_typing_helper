@@ -1,688 +1,386 @@
-import os
+"""파이썬 타자 도우미 - Flask 애플리케이션.
+
+데이터는 Firebase Firestore(Admin SDK)에 저장한다. 자격 증명이 없으면
+로컬 JSON 파일로 자동 전환되므로 Firebase 설정 없이도 앱이 뜬다(store.py 참고).
+"""
+
+from __future__ import annotations
+
 import logging
-import re
-import time
+import os
 import secrets
-import hashlib
-from datetime import datetime, timedelta
-import pytz
-from flask import Flask, render_template, request, jsonify, session
-from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.orm import DeclarativeBase
+
+from flask import Flask, jsonify, render_template, request, session
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-# 디버그 로깅 설정
-logging.basicConfig(level=logging.DEBUG)
+import config
+import content
+import scoring
+import store as store_module
+from sessions import RateLimiter, TypingSessionRegistry
 
-class Base(DeclarativeBase):
-    pass
+logger = logging.getLogger(__name__)
 
-# 데이터베이스 초기화
-db = SQLAlchemy(model_class=Base)
+# 한 번의 요청으로 보고할 수 있는 최대 키 입력 수(클라이언트는 약 2초마다 묶어 보낸다).
+MAX_KEYSTROKES_PER_REQUEST = 200
 
-# Flask 앱 초기화
-app = Flask(__name__)
-app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key-for-development")
-app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
-# 데이터베이스 설정
-database_url = os.environ.get("DATABASE_URL")
+def _configure_logging() -> None:
+    level_name = os.environ.get('LOG_LEVEL', 'INFO').upper()
+    logging.basicConfig(level=getattr(logging, level_name, logging.INFO),
+                        format='%(asctime)s %(levelname)s %(name)s: %(message)s')
 
-# DB URL 처리 및 연결 최적화
-if database_url:
-    # postgres://를 postgresql://로 변경
-    if database_url.startswith("postgres://"):
-        database_url = database_url.replace("postgres://", "postgresql://", 1)
-    elif database_url.startswith("https://"):
-        logging.warning("DATABASE_URL이 HTTPS 형식입니다. PostgreSQL 연결 문자열이 필요합니다.")
-        logging.warning("Supabase에서 올바른 Database URL을 복사해주세요.")
 
-app.config["SQLALCHEMY_DATABASE_URI"] = database_url
-app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-    "pool_recycle": 300,
-    "pool_pre_ping": True,
-    "pool_timeout": 10,
-    "pool_size": 5,
-    "max_overflow": 0,
-    "connect_args": {
-        "connect_timeout": 10,
-        "options": "-c statement_timeout=30000"
-    }
-}
+def _resolve_secret_key() -> str:
+    secret = os.environ.get('SESSION_SECRET')
+    if secret:
+        return secret
+    logger.warning(
+        'SESSION_SECRET이 설정되지 않아 임시 키를 생성했습니다. '
+        '서버를 다시 시작하면 진행 중인 연습 세션이 모두 끊깁니다. '
+        '배포 시에는 반드시 SESSION_SECRET을 설정하세요.'
+    )
+    return secrets.token_urlsafe(32)
 
-# 데이터베이스 초기화
-db.init_app(app)
 
-# 관리자 계정 설정
-ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
-ADMIN_PASS = os.environ.get("ADMIN_PASS", "admin")
+def create_app(record_store: store_module.RecordStore | None = None) -> Flask:
+    _configure_logging()
 
-# 보안 설정
-RATE_LIMIT_WINDOW = 300  # 5분 창
-MAX_SUBMISSIONS_PER_WINDOW = 3  # 5분당 최대 3번 제출
-submission_log = {}  # {student_id: [(timestamp, ip), ...]}
-typing_sessions = {}  # {session_id: {'keystrokes': [], 'start_time': timestamp}}
-MIN_KEYSTROKES = 100  # 최소 키 입력 수
+    app = Flask(__name__)
+    app.secret_key = _resolve_secret_key()
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1, x_for=1)
+    app.config.update(
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE='Lax',
+        SESSION_COOKIE_SECURE=config.SESSION_COOKIE_SECURE,
+        # 이 앱의 요청 본문은 모두 작은 JSON이다. 과도한 본문은 미리 차단한다.
+        MAX_CONTENT_LENGTH=32 * 1024,
+    )
+    app.json.ensure_ascii = False
 
-# 학생 ID 검증용 정규식
-ID_PATTERN = re.compile(r"^\d{5}\s[가-힣]{2,4}$")
+    app.extensions['record_store'] = record_store or store_module.create_store()
+    app.extensions['typing_sessions'] = TypingSessionRegistry()
+    app.extensions['rate_limiter'] = RateLimiter()
 
-# 한국 시간대 설정
-KST = pytz.timezone('Asia/Seoul')
+    _register_routes(app)
+    logger.info('저장소 백엔드: %s', app.extensions['record_store'].backend)
+    return app
 
-def get_kst_now():
-    """현재 한국 시간 반환 (timezone naive)"""
-    # timezone aware한 KST 시간을 만든 후 naive로 변환
-    kst_time = datetime.now(KST)
-    return kst_time.replace(tzinfo=None)
 
-# 데이터베이스 모델
-class Record(db.Model):
-    __tablename__ = 'records'
-    
-    id = db.Column(db.Integer, primary_key=True)
-    student_id = db.Column(db.String(20), nullable=False)
-    mode = db.Column(db.String(10), nullable=False)
-    wpm = db.Column(db.Integer, nullable=False)
-    accuracy = db.Column(db.Float, nullable=False)
-    score = db.Column(db.Integer, nullable=False)
-    duration_sec = db.Column(db.Integer, nullable=False)
-    created_at = db.Column(db.DateTime, default=get_kst_now)
-    
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'student_id': self.student_id,
-            'mode': self.mode,
-            'wpm': self.wpm,
-            'accuracy': self.accuracy,
-            'score': self.score,
-            'duration_sec': self.duration_sec,
-            'created_at': self.created_at.isoformat() if self.created_at else None
+# --- 헬퍼 ----------------------------------------------------------------
+def _store() -> store_module.RecordStore:
+    from flask import current_app
+    return current_app.extensions['record_store']
+
+
+def _typing_sessions() -> TypingSessionRegistry:
+    from flask import current_app
+    return current_app.extensions['typing_sessions']
+
+
+def _rate_limiter() -> RateLimiter:
+    from flask import current_app
+    return current_app.extensions['rate_limiter']
+
+
+def _practice_session() -> dict | None:
+    """세션에 저장된 연습 정보. 없으면 None."""
+    practice = session.get('practice')
+    if isinstance(practice, dict) and practice.get('token') and practice.get('session_id'):
+        return practice
+    return None
+
+
+def _clear_practice_session() -> None:
+    practice = session.pop('practice', None)
+    session.pop('last_practice_text', None)
+    if practice:
+        _typing_sessions().discard(practice.get('session_id'))
+
+
+def _authorized_practice(payload: dict) -> tuple[dict | None, tuple | None]:
+    """연습 세션과 토큰을 검증한다. 실패하면 (None, 응답)을 돌려준다."""
+    practice = _practice_session()
+    if practice is None:
+        return None, (jsonify({'error': '유효하지 않은 연습 세션입니다. 다시 연습을 시작해주세요.'}), 401)
+
+    provided_token = payload.get('practice_token')
+    if not provided_token or not secrets.compare_digest(str(provided_token), practice['token']):
+        return None, (jsonify({'error': '인증 토큰이 일치하지 않습니다.'}), 401)
+
+    return practice, None
+
+
+def _json_body() -> dict:
+    body = request.get_json(silent=True)
+    return body if isinstance(body, dict) else {}
+
+
+# --- 라우트 --------------------------------------------------------------
+def _register_routes(app: Flask) -> None:
+
+    @app.route('/')
+    def index():
+        """홈페이지 - 연습 모드 선택과 명예의 전당(순위표는 JS가 API로 채운다)."""
+        return render_template('index.html', modes=content.PRACTICE_MODES)
+
+    @app.route('/practice/<mode>')
+    def practice(mode):
+        """연습 화면. 연습마다 1회용 토큰을 발급한다."""
+        if mode not in content.PRACTICE_MODES:
+            return render_template('index.html', modes=content.PRACTICE_MODES), 404
+
+        # 이전 연습이 남아 있으면 정리한다.
+        _clear_practice_session()
+
+        practice_token = secrets.token_urlsafe(32)
+        session_id = secrets.token_urlsafe(16)
+        session['practice'] = {
+            'token': practice_token,
+            'session_id': session_id,
+            'mode': mode,
         }
+        _typing_sessions().create(session_id)
 
-# 연습 모드별 데이터
-PRACTICE_MODES = {
-    '자리': {
-        'title': '자리 연습',
-        'description': '파이썬 키워드와 기호를 연습하세요',
-        'icon': '⌨️',
-        'color': 'primary'
-    },
-    '낱말': {
-        'title': '낱말 연습',
-        'description': '파이썬 키워드와 함수명을 연습하세요',
-        'icon': '📝',
-        'color': 'success'
-    },
-    '문장': {
-        'title': '문장 연습',
-        'description': '파이썬 구문과 표현식을 연습하세요',
-        'icon': '📋',
-        'color': 'info'
-    },
-    '문단': {
-        'title': '문단 연습',
-        'description': '완전한 파이썬 코드 블록을 연습하세요',
-        'icon': '📄',
-        'color': 'warning'
-    }
-}
+        return render_template(
+            'practice.html',
+            mode=mode,
+            mode_info=content.PRACTICE_MODES[mode],
+            practice_token=practice_token,
+            practice_seconds=config.PRACTICE_SECONDS,
+        )
 
-@app.route('/')
-def index():
-    """홈페이지 - 연습 모드 선택"""
-    try:
-        # 자리 연습 모드의 상위 10개 기록 조회
-        top_records = Record.query.filter_by(mode='자리')\
-            .order_by(Record.score.desc(), Record.accuracy.desc(), Record.wpm.desc(), Record.created_at.asc())\
-            .limit(10)\
-            .all()
-        
-        return render_template('index.html', modes=PRACTICE_MODES, top_records=top_records)
-    except Exception as e:
-        logging.error(f"홈페이지 로딩 실패: {e}")
-        # 에러 발생 시에도 페이지는 표시되도록
-        return render_template('index.html', modes=PRACTICE_MODES, top_records=[])
+    @app.route('/health')
+    def health():
+        """헬스체크 - 저장소 연결 상태 포함."""
+        record_store = _store()
+        connected = record_store.ping()
+        return jsonify({
+            'status': 'healthy' if connected else 'unhealthy',
+            'backend': record_store.backend,
+            'database_connected': connected,
+        }), (200 if connected else 503)
 
-@app.route('/practice/<mode>')
-def practice(mode):
-    """연습 화면"""
-    if mode not in PRACTICE_MODES:
-        return "잘못된 연습 모드입니다.", 404
-    
-    # 보안 토큰 생성 및 세션에 저장
-    practice_token = secrets.token_urlsafe(32)
-    session_id = secrets.token_urlsafe(16)
-    session['practice_token'] = practice_token
-    session['session_id'] = session_id
-    session['practice_start_time'] = time.time()
-    session['practice_mode'] = mode
-    
-    # 타이핑 세션 초기화
-    typing_sessions[session_id] = {
-        'keystrokes': [],
-        'start_time': time.time(),
-        'token': practice_token
-    }
-    
-    mode_info = PRACTICE_MODES[mode]
-    return render_template('practice.html', mode=mode, mode_info=mode_info, practice_token=practice_token)
+    @app.route('/api/practice/start', methods=['POST'])
+    def start_practice():
+        """'연습 시작' 버튼을 눌렀을 때 서버 측 타이머를 시작한다."""
+        practice, error = _authorized_practice(_json_body())
+        if error:
+            return error
 
+        activity = _typing_sessions().start(practice['session_id'])
+        if activity is None:
+            return jsonify({'error': '연습 세션이 만료되었습니다. 페이지를 새로고침해주세요.'}), 409
 
+        return jsonify({'success': True, 'practice_seconds': config.PRACTICE_SECONDS})
 
-@app.route('/health')
-def health():
-    """헬스체크 엔드포인트"""
-    try:
-        # 데이터베이스 연결 테스트
-        db.session.execute(db.text('SELECT 1'))
-        db_status = True
-    except Exception as e:
-        db_status = False
-        logging.error(f"데이터베이스 연결 실패: {e}")
-    
-    status = {
-        'status': 'healthy' if db_status else 'unhealthy',
-        'database_connected': db_status
-    }
-    return jsonify(status)
+    @app.route('/api/keystroke', methods=['POST'])
+    def record_keystroke():
+        """타이핑 활동 기록. 클라이언트가 키 입력 수를 묶어서 보고한다."""
+        payload = _json_body()
+        practice, error = _authorized_practice(payload)
+        if error:
+            return error
 
-# 보안 헬퍼 함수
-def check_rate_limit(student_id, client_ip):
-    """학생별 제출 빈도 제한 검사"""
-    current_time = time.time()
-    
-    # 오래된 로그 정리
-    if student_id in submission_log:
-        submission_log[student_id] = [
-            (timestamp, ip) for timestamp, ip in submission_log[student_id]
-            if current_time - timestamp < RATE_LIMIT_WINDOW
-        ]
-    
-    # 현재 제출 횟수 확인
-    if student_id in submission_log:
-        if len(submission_log[student_id]) >= MAX_SUBMISSIONS_PER_WINDOW:
-            return False
-    
-    # 새 제출 기록
-    if student_id not in submission_log:
-        submission_log[student_id] = []
-    submission_log[student_id].append((current_time, client_ip))
-    
-    return True
+        try:
+            count = int(payload.get('count', 1))
+        except (TypeError, ValueError):
+            return jsonify({'error': 'count 값이 올바르지 않습니다.'}), 400
 
-def validate_typing_activity(session_id, duration_sec):
-    """실제 타이핑 활동 검증"""
-    if session_id not in typing_sessions:
-        return False, '타이핑 세션을 찾을 수 없습니다.'
-    
-    session_data = typing_sessions[session_id]
-    keystrokes = session_data['keystrokes']
-    
-    # 최소 키 입력 수 검사
-    if len(keystrokes) < MIN_KEYSTROKES:
-        return False, f'연습이 부족합니다. 최소 {MIN_KEYSTROKES}번 이상 타이핑해주세요.'
-    
-    # 타이핑 시간 분산 검사 (5분 연습 완료 후 추가 시간 고려)
-    if len(keystrokes) > 0:
-        time_span = keystrokes[-1] - keystrokes[0] if len(keystrokes) > 1 else duration_sec
-        # 실제 타이핑 시간은 최소 4분(240초) 이상이어야 함 (5분 연습 기준)
-        min_typing_time = 240  # 4분
-        if time_span < min_typing_time:
-            return False, '타이핑 패턴이 비정상입니다.'
-    
-    return True, 'OK'
+        count = max(1, min(count, MAX_KEYSTROKES_PER_REQUEST))
 
-def validate_data_integrity(wpm, accuracy, score, duration_sec):
-    """데이터 무결성 검증"""
-    # 기본 범위 검증
-    if not (0 <= accuracy <= 100):
-        return False, '정확도는 0-100% 사이여야 합니다.'
-    
-    if not (0 <= wpm <= 500):
-        return False, '분당 타수는 0-500 사이여야 합니다.'
-    
-    # 5분 연습 완료 후 학번 입력 시간까지 고려하여 넉넉하게 허용
-    if not (300 <= duration_sec <= 1200):  # 5분~20분 (학번 입력 시간 충분히 고려)
-        return False, '연습 시간이 비정상입니다.'
-    
-    # 현실적인 성능 범위 검사 (중학생 수준)
-    if accuracy > 85 and wpm > 300:  # 비현실적인 고성능
-        return False, '비현실적인 성능입니다.'
-    
-    if accuracy < 50 and wpm > 200:  # 정확도 낮은데 속도 높음
-        return False, '비일반적인 타이핑 패턴입니다.'
-    
-    # 점수 계산 공식 검증: score = round(max(0, WPM) * (accuracy/100)^2 * 100)
-    expected_score = round(max(0, wpm) * ((accuracy / 100) ** 2) * 100)
-    score_tolerance = max(1, expected_score * 0.02)  # 2% 오차로 제한 강화
-    
-    if abs(score - expected_score) > score_tolerance:
-        return False, f'점수 계산이 비정상입니다. 예상: {expected_score}, 실제: {score}'
-    
-    return True, 'OK'
+        activity = _typing_sessions().add_keystrokes(practice['session_id'], count)
+        if activity is None:
+            return jsonify({'error': '연습이 시작되지 않았습니다.'}), 409
 
-# API 엔드포인트 - 기록 저장 (보안 강화)
-@app.route('/api/records', methods=['POST'])
-def create_record():
-    """연습 기록 저장 - 보안 강화 버전"""
-    try:
-        client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR', 'unknown'))
-        
-        # 1. 세션 검증
-        if 'practice_token' not in session or 'practice_start_time' not in session:
-            return jsonify({'error': '유효하지 않은 연습 세션입니다. 다시 연습을 시작해주세요.'}), 401
-        
-        data = request.get_json()
-        if not data:
+        return jsonify({'success': True, 'count': activity.count})
+
+    @app.route('/api/records', methods=['POST'])
+    def create_record():
+        """연습 기록 저장.
+
+        연습 시간과 점수는 **서버가 계산**한다. 클라이언트가 보낸 duration_sec,
+        score 값은 사용하지 않는다.
+        """
+        payload = _json_body()
+        if not payload:
             return jsonify({'error': '잘못된 요청 데이터입니다.'}), 400
-        
-        # 2. 토큰 검증
-        provided_token = data.get('practice_token')
-        if not provided_token or provided_token != session.get('practice_token'):
-            return jsonify({'error': '인증 토큰이 일치하지 않습니다.'}), 401
-        
-        # 3. 필수 필드 검증
-        required_fields = ['student_id', 'mode', 'wpm', 'accuracy', 'score', 'duration_sec']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({'error': f'{field} 필드가 필요합니다.'}), 400
-        
-        student_id = data['student_id'].strip()
-        mode = data['mode']
-        wpm = int(data['wpm'])
-        accuracy = float(data['accuracy'])
-        score = int(data['score'])
-        duration_sec = int(data['duration_sec'])
-        
-        # 4. 기본 검증
-        if not ID_PATTERN.match(student_id):
-            return jsonify({'error': '학번 이름 형식이 올바르지 않습니다. (예: 10218 홍길동)'}), 400
-        
-        if mode not in PRACTICE_MODES:
+
+        practice, error = _authorized_practice(payload)
+        if error:
+            return error
+
+        mode = practice['mode']
+        if mode not in content.PRACTICE_MODES:
             return jsonify({'error': '올바르지 않은 연습 모드입니다.'}), 400
-            
-        if mode != session.get('practice_mode'):
-            return jsonify({'error': '연습 모드가 세션과 일치하지 않습니다.'}), 400
-        
-        # 5. 타이밍 검증
-        session_start_time = session.get('practice_start_time')
-        if session_start_time is None:
-            return jsonify({'error': '연습 시작 시간을 찾을 수 없습니다.'}), 401
-        
-        current_time = time.time()
-        actual_duration = current_time - session_start_time
-        
-        # 실제 연습 시간과 제출된 시간의 차이 검증
-        # 5분 연습 완료 후 학번 입력 시간을 고려하여 완화된 검증
-        if duration_sec >= 300:  # 5분 이상 연습한 경우
-            # 5분 연습 완료 후에는 추가 시간 허용 (최대 15분까지)
-            max_allowed_time = duration_sec + 900  # 제출된 연습시간 + 15분
-            if actual_duration > max_allowed_time:
-                return jsonify({'error': f'연습 완료 후 너무 많은 시간이 경과했습니다.'}), 400
-        else:
-            # 5분 미만 연습의 경우 기존 검증 유지 (±15초 오차 허용)
-            if abs(actual_duration - duration_sec) > 15:
-                return jsonify({'error': f'연습 시간이 비정상입니다. 실제: {actual_duration:.1f}초, 제출: {duration_sec}초'}), 400
-        
-        if duration_sec < 300:
-            return jsonify({'error': '5분 종료 후 저장 가능합니다.'}), 400
-        
-        # 6. Rate Limiting 검사
-        if not check_rate_limit(student_id, client_ip):
-            return jsonify({'error': f'너무 빠른 제출입니다. {RATE_LIMIT_WINDOW//60}분당 최대 {MAX_SUBMISSIONS_PER_WINDOW}번만 제출 가능합니다.'}), 429
-        
-        # 7. 실제 타이핑 활동 검증
-        session_id = session.get('session_id')
-        if session_id:
-            typing_valid, typing_msg = validate_typing_activity(session_id, duration_sec)
-            if not typing_valid:
-                return jsonify({'error': typing_msg}), 400
-        
-        # 8. 데이터 무결성 검증
-        is_valid, error_msg = validate_data_integrity(wpm, accuracy, score, duration_sec)
+
+        student_id = str(payload.get('student_id', '')).strip()
+        is_valid, message = scoring.validate_student_id(student_id)
         if not is_valid:
-            return jsonify({'error': error_msg}), 400
-        
-        # 8. Referer 헤더 검증 (옵션)
-        referer = request.headers.get('Referer', '')
-        if referer and not any(domain in referer for domain in [request.host, 'localhost', '127.0.0.1']):
-            logging.warning(f'의심스러운 Referer: {referer}, IP: {client_ip}, Student: {student_id}')
-        
-        # 9. 기록 저장
-        new_record = Record()
-        new_record.student_id = student_id
-        new_record.mode = mode
-        new_record.wpm = wpm
-        new_record.accuracy = accuracy
-        new_record.score = score
-        new_record.duration_sec = duration_sec
-        new_record.created_at = get_kst_now()
-        
-        db.session.add(new_record)
-        db.session.commit()
-        
-        # 세션 토큰 및 타이핑 데이터 무효화 (일회성)
-        session_id = session.get('session_id')
-        if session_id and session_id in typing_sessions:
-            del typing_sessions[session_id]
-        
-        session.pop('practice_token', None)
-        session.pop('practice_start_time', None)
-        session.pop('practice_mode', None)
-        session.pop('session_id', None)
-        
-        logging.info(f'기록 저장 성공: {student_id}, {mode}, {score}점, IP: {client_ip}')
-        
+            return jsonify({'error': message}), 400
+
+        try:
+            wpm = int(payload['wpm'])
+            accuracy = float(payload['accuracy'])
+        except (KeyError, TypeError, ValueError):
+            return jsonify({'error': '분당 타수와 정확도를 숫자로 보내주세요.'}), 400
+
+        # 1) 실제로 연습을 진행했는지 확인한다.
+        activity = _typing_sessions().get(practice['session_id'])
+        if activity is None or activity.started_at is None:
+            return jsonify({'error': '연습 기록을 찾을 수 없습니다. 다시 연습을 시작해주세요.'}), 409
+
+        elapsed = activity.elapsed_seconds
+        if elapsed < config.PRACTICE_SECONDS:
+            return jsonify({'error': f'{config.PRACTICE_SECONDS // 60}분 종료 후 저장 가능합니다.'}), 400
+
+        if elapsed > config.PRACTICE_SECONDS + config.SAVE_GRACE_SECONDS:
+            return jsonify({'error': '연습 완료 후 너무 많은 시간이 경과했습니다. 다시 연습해주세요.'}), 400
+
+        # 저장되는 연습 시간은 항상 규정 연습 시간이다(클라이언트 값 신뢰하지 않음).
+        duration_sec = config.PRACTICE_SECONDS
+
+        is_valid, message = scoring.validate_typing_activity(activity, duration_sec)
+        if not is_valid:
+            return jsonify({'error': message}), 400
+
+        # 2) 성능 수치가 현실적인지 확인한다.
+        is_valid, message = scoring.validate_metrics(wpm, accuracy)
+        if not is_valid:
+            return jsonify({'error': message}), 400
+
+        is_valid, message = scoring.validate_wpm_against_keystrokes(
+            wpm, activity.count, duration_sec)
+        if not is_valid:
+            return jsonify({'error': message}), 400
+
+        # 3) 제출 빈도 제한(검증을 모두 통과한 요청에만 적용).
+        if not _rate_limiter().allow(student_id):
+            return jsonify({
+                'error': f'너무 빠른 제출입니다. {config.RATE_LIMIT_WINDOW // 60}분당 최대 '
+                         f'{config.MAX_SUBMISSIONS_PER_WINDOW}번만 제출 가능합니다.'
+            }), 429
+
+        score = scoring.compute_score(wpm, accuracy)
+
+        try:
+            saved = _store().add(student_id=student_id, mode=mode, wpm=wpm, accuracy=accuracy,
+                                 score=score, duration_sec=duration_sec)
+        except Exception as error:  # noqa: BLE001 - 저장 실패는 사용자에게 일반 메시지로 알린다
+            logger.exception('기록 저장 실패: %s', error)
+            return jsonify({'error': '기록을 저장하지 못했습니다. 잠시 후 다시 시도해주세요.'}), 503
+
+        # 토큰은 1회용이다. 저장 후 세션과 타이핑 기록을 모두 폐기한다.
+        _clear_practice_session()
+
+        logger.info('기록 저장 성공: %s, %s, %s점, IP: %s',
+                    student_id, mode, score, request.remote_addr)
+
         return jsonify({
             'success': True,
             'message': '기록이 성공적으로 저장되었습니다.',
-            'id': new_record.id
+            'id': saved['id'],
+            'score': score,
+            'wpm': wpm,
+            'accuracy': accuracy,
         }), 201
-        
-    except ValueError as e:
-        return jsonify({'error': '숫자 형식이 올바르지 않습니다.'}), 400
-    except Exception as e:
-        client_ip_safe = locals().get('client_ip', 'unknown')
-        logging.error(f"기록 저장 실패: {e}, IP: {client_ip_safe}")
-        db.session.rollback()
-        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
 
-# API 엔드포인트 - 키스트로크 기록
-@app.route('/api/keystroke', methods=['POST'])
-def record_keystroke():
-    """타이핑 활동 기록"""
-    try:
-        data = request.get_json()
-        if not data:
-            return jsonify({'error': '잘못된 요청입니다.'}), 400
-        
-        session_id = session.get('session_id')
-        if not session_id or session_id not in typing_sessions:
-            return jsonify({'error': '유효하지 않은 세션입니다.'}), 401
-        
-        # 키스트로크 타임스탬프 기록
-        timestamp = time.time()
-        typing_sessions[session_id]['keystrokes'].append(timestamp)
-        
-        # 메모리 절약을 위해 오래된 데이터 정리
-        if len(typing_sessions[session_id]['keystrokes']) > 1000:
-            typing_sessions[session_id]['keystrokes'] = typing_sessions[session_id]['keystrokes'][-500:]
-        
-        return jsonify({'success': True}), 200
-        
-    except Exception as e:
-        logging.error(f"키스트로크 기록 실패: {e}")
-        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
-
-# API 엔드포인트 - 랭킹 조회
-@app.route('/api/records/top')
-def get_top_records():
-    """상위 10개 기록 조회"""
-    try:
+    @app.route('/api/records/top')
+    def get_top_records():
+        """모드별 상위 10개 기록."""
         mode = request.args.get('mode', '자리')
-        if mode not in PRACTICE_MODES:
+        if mode not in content.PRACTICE_MODES:
             return jsonify({'error': '올바르지 않은 연습 모드입니다.'}), 400
-        
-        # 상위 10개 기록 조회 (점수 desc, 정확도 desc, WPM desc, 날짜 asc 순)
-        records = Record.query.filter_by(mode=mode)\
-            .order_by(Record.score.desc(), Record.accuracy.desc(), Record.wpm.desc(), Record.created_at.asc())\
-            .limit(10)\
-            .all()
-        
+
+        try:
+            records = _store().top(mode, 10)
+        except Exception as error:  # noqa: BLE001
+            logger.exception('랭킹 조회 실패: %s', error)
+            return jsonify({'error': '기록을 불러오지 못했습니다.'}), 503
+
         return jsonify({
             'success': True,
             'mode': mode,
-            'records': [record.to_dict() for record in records],
-            'total': len(records)
+            'records': [store_module.to_api_dict(record) for record in records],
+            'total': len(records),
         })
-        
-    except Exception as e:
-        logging.error(f"랭킹 조회 실패: {e}")
-        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
 
-# API 엔드포인트 - 통계 조회
-@app.route('/api/records/stats')
-def get_statistics():
-    """전체 통계 조회"""
-    try:
-        # 전체 학생 수 (고유 student_id)
-        total_students = db.session.query(Record.student_id).distinct().count()
-        
-        # 전체 기록 수
-        total_records = Record.query.count()
-        
-        # 평균 WPM (모든 기록의 평균)
-        avg_wpm_result = db.session.query(db.func.avg(Record.wpm)).scalar()
-        avg_wpm = float(avg_wpm_result) if avg_wpm_result else 0
-        
-        # 평균 정확도 (모든 기록의 평균)
-        avg_accuracy_result = db.session.query(db.func.avg(Record.accuracy)).scalar()
-        avg_accuracy = float(avg_accuracy_result) if avg_accuracy_result else 0
-        
-        return jsonify({
-            'success': True,
-            'total_students': total_students,
-            'total_records': total_records,
-            'avg_wpm': avg_wpm,
-            'avg_accuracy': avg_accuracy
-        })
-        
-    except Exception as e:
-        logging.error(f"통계 조회 실패: {e}")
-        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
-
-# API 엔드포인트 - 페이지네이션된 기록 조회
-@app.route('/api/records')
-def get_records():
-    """페이지네이션된 기록 조회"""
-    try:
+    @app.route('/api/records')
+    def get_records():
+        """페이지네이션된 기록 조회."""
         mode = request.args.get('mode', '자리')
-        limit = int(request.args.get('limit', 10))
-        offset = int(request.args.get('offset', 0))
-        
-        if mode not in PRACTICE_MODES:
+        if mode not in content.PRACTICE_MODES:
             return jsonify({'error': '올바르지 않은 연습 모드입니다.'}), 400
-        
-        # limit 범위 제한 (1-10000, 전체 보기 지원)
-        limit = max(1, min(limit, 10000))
-        # offset 음수 방지
+
+        try:
+            limit = int(request.args.get('limit', 10))
+            offset = int(request.args.get('offset', 0))
+        except ValueError:
+            return jsonify({'error': 'limit 또는 offset이 올바르지 않습니다.'}), 400
+
+        limit = max(1, min(limit, config.MAX_PAGE_SIZE))
         offset = max(0, offset)
-        
-        # 총 기록 수 조회
-        total_count = Record.query.filter_by(mode=mode).count()
-        
-        # 페이지네이션된 기록 조회
-        records = Record.query.filter_by(mode=mode)\
-            .order_by(Record.score.desc(), Record.accuracy.desc(), Record.wpm.desc(), Record.created_at.asc())\
-            .offset(offset)\
-            .limit(limit)\
-            .all()
-        
-        # 다음 페이지 존재 여부
-        has_more = (offset + limit) < total_count
-        
+
+        try:
+            records, total = _store().page(mode, limit, offset)
+        except Exception as error:  # noqa: BLE001
+            logger.exception('기록 조회 실패: %s', error)
+            return jsonify({'error': '기록을 불러오지 못했습니다.'}), 503
+
         return jsonify({
             'success': True,
             'mode': mode,
-            'records': [record.to_dict() for record in records],
+            'records': [store_module.to_api_dict(record) for record in records],
             'pagination': {
                 'limit': limit,
                 'offset': offset,
-                'total': total_count,
-                'has_more': has_more,
-                'current_count': len(records)
-            }
+                'total': total,
+                'has_more': offset + limit < total,
+                'current_count': len(records),
+            },
         })
-        
-    except ValueError:
-        return jsonify({'error': 'limit 또는 offset이 올바르지 않습니다.'}), 400
-    except Exception as e:
-        logging.error(f"기록 조회 실패: {e}")
-        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
 
-# API 엔드포인트 - 연습 텍스트 가져오기
-@app.route('/api/practice-text/<mode>')
-def get_practice_text(mode):
-    """연습용 텍스트 가져오기"""
-    if mode not in PRACTICE_MODES:
-        return jsonify({'error': '올바르지 않은 연습 모드입니다.'}), 400
-    
-    # 정적 데이터에서 랜덤하게 선택
-    import random
-    
-    # 자리 연습용 키워드 풀
-    keyboard_chars = ['asdf', 'jkl;', 'qwer', 'uiop', 'zxcv', 'bnm,']
-    python_keywords = ['if', 'else', 'def', 'for', 'while', 'and', 'or', 'not', 'in', 'is', 'True', 'False', 'None']
-    python_functions = ['print()', 'input()', 'len()', 'str()', 'int()', 'float()', 'bool()', 'list()', 'dict()']
-    symbols = ['[]', '{}', '()', '""', "''", ':', ';', ',', '.', '/', '?', '!', '@', '#', '$', '%', '^', '&', '*', '-', '+', '=', '_']
-    
-    practice_texts = {
-        '자리': [],  # 동적으로 생성됨
-        '낱말': [
-            'print input len str int float bool list dict tuple',
-            'def if else elif for while and or not in is',
-            'True False None return break continue pass',
-            'append remove pop sort index count reverse',
-            'range type isinstance hasattr getattr setattr'
-        ],
-        '문장': [
-            'print("Hello, World!")',
-            'for i in range(10):',
-            'if x > 0 and x < 100:',
-            'name = input("Enter your name: ")',
-            'numbers = [1, 2, 3, 4, 5]'
-        ],
-        '문단': [
-            '''def factorial(n):
-    if n <= 1:
-        return 1
-    else:
-        return n * factorial(n - 1)''',
-            '''numbers = [1, 2, 3, 4, 5]
-for num in numbers:
-    if num % 2 == 0:
-        print(f"{num} is even")''',
-            '''class Student:
-    def __init__(self, name, age):
-        self.name = name
-        self.age = age'''
-        ]
-    }
-    
-    if mode == '자리':
-        # 자리 연습의 경우 랜덤하게 섞인 텍스트 생성
-        all_items = keyboard_chars + python_keywords + python_functions + symbols
-        random.shuffle(all_items)
-        
-        # 15-20개 항목을 선택해서 하나의 연습 텍스트로 만들기
-        num_items = random.randint(15, 20)
-        selected_items = all_items[:num_items]
-        selected_text = ' '.join(selected_items)
-    else:
-        texts = practice_texts.get(mode, [])
-        if not texts:
+    # 참고: 전체 통계 API(`GET /api/records/stats`)는 v0.8에서 제거했다.
+    # 호출하는 화면이 없는데 평균·고유 학생 수를 구하느라 모든 기록을 읽었다.
+    # 교사 대시보드(SRD v0.9)에서 이 수치가 실제로 필요해지면, 그때 반·기간 축으로
+    # 설계하고 저장 시 요약 문서를 갱신하는 방식으로 다시 만든다.
+
+    @app.route('/api/practice-text/<mode>')
+    def get_practice_text(mode):
+        """연습용 텍스트. 가능하면 직전 텍스트와 다른 것을 돌려준다."""
+        if mode not in content.PRACTICE_MODES:
+            return jsonify({'error': '올바르지 않은 연습 모드입니다.'}), 400
+
+        try:
+            text = content.build_practice_text(mode, exclude=session.get('last_practice_text'))
+        except KeyError:
             return jsonify({'error': '연습 텍스트를 찾을 수 없습니다.'}), 404
-        
-        selected_text = random.choice(texts)
-    
-    return jsonify({
-        'success': True,
-        'mode': mode,
-        'text': selected_text
-    })
 
-# WPM 재계산 API 엔드포인트
-@app.route('/api/admin/recalculate-wpm', methods=['POST'])
-def recalculate_wpm():
-    """기존 기록의 WPM을 새로운 공식으로 재계산"""
-    try:
-        # 모든 기록 조회
-        records = Record.query.all()
-        updated_count = 0
-        
-        for record in records:
-            # 비현실적으로 낮은 WPM (20 이하) 기록만 재계산
-            if record.wpm <= 20:
-                duration_minutes = record.duration_sec / 60
-                
-                # 더 현실적인 WPM 계산 (중학생 실제 타이핑 속도 고려)
-                # 정확도와 연습 시간을 기반으로 한 추정
-                if record.accuracy >= 98:
-                    # 매우 높은 정확도: 신중하게 타이핑
-                    base_wpm = 18
-                elif record.accuracy >= 90:
-                    # 높은 정확도: 적당한 속도
-                    base_wpm = 22
-                elif record.accuracy >= 80:
-                    # 보통 정확도: 빠르게 타이핑하다 일부 실수
-                    base_wpm = 25
-                elif record.accuracy >= 70:
-                    # 낮은 정확도: 빠르게 타이핑하다 많은 실수
-                    base_wpm = 28
-                else:
-                    # 매우 낮은 정확도: 매우 빠르게 시도했으나 실수 많음
-                    base_wpm = 30
-                
-                # 모드별 난이도 조정
-                if record.mode == '자리':
-                    difficulty_factor = 0.7  # 기본 자리 연습은 쉬움
-                elif record.mode == '낱말':
-                    difficulty_factor = 0.8  # 단어는 조금 어려움
-                elif record.mode == '문장':
-                    difficulty_factor = 0.9  # 문장은 더 어려움
-                else:  # 문단
-                    difficulty_factor = 1.0  # 문단은 가장 어려움
-                
-                # 최종 WPM 계산
-                new_wpm = round(base_wpm * difficulty_factor)
-                
-                # 합리적인 범위 보장 (중학생 기준: 12-35 WPM)
-                new_wpm = max(12, min(new_wpm, 35))
-                
-                # 기록 업데이트
-                record.wpm = new_wpm
-                updated_count += 1
-        
-        # 데이터베이스에 저장
-        db.session.commit()
-        
-        return jsonify({
-            'success': True,
-            'message': f'{updated_count}개 기록의 WPM이 재계산되었습니다.',
-            'updated_count': updated_count,
-            'total_records': len(records)
-        })
-        
-    except Exception as e:
-        logging.error(f"WPM 재계산 실패: {e}")
-        db.session.rollback()
-        return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
+        session['last_practice_text'] = text
 
-# 데이터베이스 테이블 생성
-with app.app_context():
-    try:
-        db.create_all()
-        logging.info("데이터베이스 테이블이 성공적으로 생성되었습니다.")
-        
-        # 테스트 데이터 추가 (개발용)
-        if Record.query.count() == 0:
-            test_records = [
-                {'student_id': '10130 홍길동', 'mode': '자리', 'wpm': 45, 'accuracy': 92.5, 'score': 370, 'duration_sec': 300},
-                {'student_id': '10215 김영희', 'mode': '자리', 'wpm': 38, 'accuracy': 96.0, 'score': 350, 'duration_sec': 300},
-                {'student_id': '10302 박철수', 'mode': '자리', 'wpm': 52, 'accuracy': 89.2, 'score': 415, 'duration_sec': 300}
-            ]
-            for record_data in test_records:
-                record = Record(**record_data)
-                db.session.add(record)
-            db.session.commit()
-            logging.info("테스트 데이터가 추가되었습니다.")
-            
-    except Exception as e:
-        logging.error(f"데이터베이스 테이블 생성 실패: {e}")
-        logging.info("Replit PostgreSQL 데이터베이스를 사용합니다.")
+        response = jsonify({'success': True, 'mode': mode, 'text': text})
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+
+    @app.errorhandler(404)
+    def handle_not_found(error):
+        if request.path.startswith('/api/'):
+            return jsonify({'error': '요청한 API를 찾을 수 없습니다.'}), 404
+        return render_template('index.html', modes=content.PRACTICE_MODES), 404
+
+    @app.errorhandler(500)
+    def handle_server_error(error):
+        logger.exception('처리되지 않은 서버 오류: %s', error)
+        if request.path.startswith('/api/'):
+            return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
+        return render_template('index.html', modes=content.PRACTICE_MODES), 500
+
+
+app = create_app()
+
 
 if __name__ == '__main__':
-    # 개발 환경에서 디버그 모드로 실행
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # 로컬 개발용. 배포는 gunicorn을 사용한다(Procfile 참고).
+    debug = os.environ.get('FLASK_DEBUG', '0').strip().lower() in {'1', 'true', 'yes', 'on'}
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=debug)

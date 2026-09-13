@@ -1,16 +1,19 @@
 [project]
-name = "repl-nix-workspace"
-version = "0.1.0"
-description = "Add your description here"
+name = "python-typing-helper"
+version = "0.8.0"
+description = "중학교 1학년 정보 교과용 파이썬 타자 연습 웹 애플리케이션"
 requires-python = ">=3.11"
 dependencies = [
-    "email-validator>=2.2.0",
     "flask>=3.1.1",
-    "flask-sqlalchemy>=3.1.1",
-    "gunicorn>=23.0.0",
-    "psycopg2-binary>=2.9.10",
-    "pytz>=2025.2",
-    "sqlalchemy>=2.0.43",
-    "supabase>=2.18.1",
     "werkzeug>=3.1.3",
+    "gunicorn>=23.0.0",
+    "firebase-admin>=6.5.0",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

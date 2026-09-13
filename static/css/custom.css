@@ -37,13 +37,18 @@
     font-size: 1.1rem;
     line-height: 1.4;
     letter-spacing: 0.3px;
-    white-space: nowrap !important;
-    overflow: visible;
+    /* 문장/문단 모드의 줄바꿈과 들여쓰기를 그대로 보여준다. */
+    white-space: pre-wrap;
     min-height: 35px;
-    height: 35px;
     color: var(--bs-body-color);
     padding: 0.3rem;
     display: block;
+}
+
+/* '자리' 연습은 한 줄로 길게 표시하고 가로 스크롤을 쓴다. */
+.practice-text.practice-text-single-line {
+    white-space: nowrap;
+    height: 35px;
     width: max-content;
     word-break: keep-all;
     word-wrap: normal;

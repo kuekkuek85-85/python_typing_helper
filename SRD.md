@@ -2,39 +2,26 @@
 
 > 목표: 본 SRD는 **수업 현장 배포 가능한 최소 단위**부터 기능을 점진적으로 붙여 **안정적으로 1.0 출시**하는 것을 돕습니다.
 > 기타: 개발하는 과정에서의 AI agent는 모든 과정과 답변을 한국어로 답변하도록 합니다.
-> 스택: Flask + HTML/CSS/JS + Supabase(PostgreSQL)
+> 스택: Flask + HTML/CSS/JS + Firebase(Firestore)  ← v0.8에서 Supabase(PostgreSQL)에서 이전
+> 개발/배포 실무: [CLAUDE.md](CLAUDE.md), [DEPLOYMENT.md](DEPLOYMENT.md)
 
 ---
 
 ## 0) 준비
-- Replit 새 프로젝트(Python) 생성
-- **Secrets/환경변수** 설정
-  - `SUPABASE_URL` = (프로젝트 URL)
-  - `SUPABASE_ANON_KEY` = (anon 키)
-  - `ADMIN_USER` = `admin`
-  - `ADMIN_PASS` = `admin`
-  - `SESSION_SECRET` = (랜덤 시크릿 키)
+- 개발 환경: Python 3.11 + Claude Code (이전에는 Replit)
+- **환경 변수** 설정 (`.env.example` 참고)
+  - `SESSION_SECRET` = (랜덤 시크릿 키, 필수)
+  - `FIREBASE_SERVICE_ACCOUNT_JSON` = (Firebase 서비스 계정 JSON 한 줄)
 - 패키지 설치
   ```bash
-  pip install flask supabase
+  pip install -r requirements.txt
   ```
-- Supabase SQL 콘솔에 아래 테이블/인덱스 실행 (PRD 참조)
-  ```sql
-  CREATE TABLE IF NOT EXISTS records (
-    id SERIAL PRIMARY KEY,
-    student_id TEXT NOT NULL,
-    mode TEXT NOT NULL,
-    wpm INT NOT NULL,
-    accuracy FLOAT NOT NULL,
-    score INT NOT NULL,
-    duration_sec INT NOT NULL,
-    created_at TIMESTAMP DEFAULT now()
-  );
-  CREATE INDEX IF NOT EXISTS idx_records_mode ON records(mode);
-  CREATE INDEX IF NOT EXISTS idx_records_sort ON records(score DESC, accuracy DESC, wpm DESC, created_at ASC);
-  CREATE EXTENSION IF NOT EXISTS pg_trgm;
-  CREATE INDEX IF NOT EXISTS idx_records_student_id_trgm ON records USING gin (student_id gin_trgm_ops);
-  ```
+- Firebase 콘솔에서 Firestore 데이터베이스를 만들고 `firestore.rules`를 적용한다.
+  - 컬렉션: `records`
+  - 문서 필드: `student_id`, `mode`, `wpm`, `accuracy`, `score`, `duration_sec`, `created_at`
+  - 별도 색인은 필요 없다(모드별 조회만 Firestore에 맡기고 정렬은 서버에서 처리).
+- Firebase 자격 증명 없이 실행하려면 `STORE_BACKEND=local`로 두면
+  `data/records.json`에 저장한다(수업 전 점검·자동 테스트용).
 
 ---
 
@@ -59,7 +46,7 @@
 - [x] 결과 화면: WPM/Accuracy/Score 표시
 - [x] **WPM 공식 개선**: 정확한 글자 수만 계산하여 현실적인 타수 측정
 
-## v0.5 Supabase 연동(저장) (완료)
+## v0.5 데이터베이스 연동(저장) (완료)
 - [x] `POST /api/records` 라우트
 - [x] 본문: `student_id`, `mode`, `wpm`, `accuracy`, `score`, `duration_sec`
 - [x] **유효성 검증(백엔드)**: 정규식 `^\d{5}\s[가-힣]{2,4}$`
@@ -113,12 +100,59 @@
 - [x] **보안 토큰 숨김**: JavaScript에서 토큰 직접 접근 방지
 - [x] **연습 완료 표시**: 버튼 상태 변경으로 완료 상태 명확히 표시
 
-## v0.8 검색(부분 일치)
+## v0.8.0 Firebase 이전 & 전체 코드 정리 (완료)
+### 데이터베이스
+- [x] **Supabase(PostgreSQL) → Firebase Firestore 이전**: SQLAlchemy 제거, Admin SDK 사용
+- [x] **저장소 추상화**: Firestore 백엔드 + 로컬 JSON 백엔드(`STORE_BACKEND`로 전환)
+- [x] **보안 규칙**: 브라우저 직접 접근 전면 차단(`firestore.rules`)
+- [x] **시간대 정리**: UTC로 저장하고 API 응답에서 `+09:00` 명시
+
+### 저장 실패 문제 해결
+- [x] **점수 기준 통일**: 화면의 점수와 서버 검증식이 달라 저장이 거의 항상 실패하던 문제 해결.
+      이제 점수는 서버가 PRD 공식으로 계산하고, 화면도 같은 공식을 쓴다.
+- [x] **분당 타수 실측화**: ×2.5~×8 배율 보정과 최소 30타 강제를 제거.
+      잘 치는 학생이 "비현실적인 성능"으로 거부되던 문제도 함께 해결.
+- [x] **연습 시간 서버 계산**: `duration_sec`을 클라이언트에서 받지 않고 서버가 결정
+- [x] **키 입력 집계 방식 변경**: 타임스탬프 배열을 잘라내다 타이핑 구간이 짧아져
+      정상 기록이 거부되던 문제 해결(개수/처음/마지막만 유지)
+- [x] **타이핑 구간 기준 완화**: 4분 → 2분 (`MIN_TYPING_SPAN_SECONDS`)
+- [x] **제출 빈도 제한 시점 변경**: 검증을 통과한 요청만 카운트
+
+### 통계 정확도
+- [x] **누적 통계**: 텍스트가 다음으로 넘어가도 타수·정확도가 초기화되지 않도록 누적
+- [x] **단어 점수 초기화**: 새 텍스트에서 적립 포인트가 더 이상 쌓이지 않던 문제 해결
+- [x] **타이머 보정**: 탭이 비활성화되어도 실제 경과 시간으로 남은 시간 계산
+
+### 보안
+- [x] **인증 없는 관리자 API 제거**: 누구나 전체 기록을 수정할 수 있었던
+      `/api/admin/recalculate-wpm` 삭제
+- [x] **테스트 데이터 자동 삽입 제거**: 운영 DB가 오염되지 않도록
+- [x] **미사용 통계 API 제거**: `GET /api/records/stats`는 호출하는 화면이 없는데
+      평균·고유 학생 수를 구하느라 모든 기록을 읽었다. 교사 대시보드(v0.9)에서
+      실제로 필요해지면 반·기간 축으로 설계하고 저장 시 요약 문서를 갱신하는
+      방식으로 다시 만든다.
+- [x] **세션 쿠키 강화**: HttpOnly, SameSite=Lax, `SESSION_COOKIE_SECURE` 옵션
+- [x] **토큰 비교**: `secrets.compare_digest` 사용
+
+### 안정성
+- [x] **Bootstrap 사본 포함**: CDN(구 Replit CDN)이 막히면 모달이 뜨지 않아 학생이
+      기록을 저장할 수 없던 위험 제거
+- [x] **자동 테스트 도입**: pytest 52개 (저장소·점수·API·Firestore 로직)
+- [x] **메모리 누수 제거**: 연습 세션·제출 기록 자동 정리
+
+---
+
+## v0.8.2 검색(부분 일치) (예정)
 - [ ] 상단 검색 바(2자 이상 입력 시 동작, 디바운스 300ms)
 - [ ] `search` 파라미터를 받아 `student_id ilike '%q%'`
 - [ ] 검색+페이지네이션 동시 동작
 
-## v0.8.1 보안 강화 상세 구현 (완료)
+## v0.8.1 보안 강화 상세 구현 (완료 — v0.8.0에서 구현 방식 변경)
+> 아래 항목의 의도는 유지되지만 구현 세부는 v0.8.0에서 바뀌었다.
+> 키 입력은 `keypress` 대신 `keydown`으로 세고 약 2초 단위로 묶어 보고하며,
+> 서버는 타임스탬프 배열이 아니라 개수/처음/마지막만 보관한다.
+> 점수 검증식은 없어졌고 서버가 점수를 직접 계산한다.
+
 ### 서버 측 보안 검증
 - [x] **다중 보안 계층**: 세션 검증 → 토큰 검증 → Rate Limiting → 타이핑 활동 검증 → 데이터 무결성 검증
 - [x] **타이핑 세션 관리**: `typing_sessions` 전역 딕셔너리로 세션별 키스트로크 추적
@@ -147,130 +181,50 @@
 
 ---
 
-## 실행 가이드(Replit)
-- `app.py`에 Flask 서버 작성 후 **Run** 버튼
-- 포트는 5000 사용 (외부 접근 가능)
-- 장치 보안: 관리자 자격은 환경변수로 유지, 필요시 배포 시점에 변경
+## 실행 가이드
+```bash
+# 로컬 개발 (Firebase 없이)
+STORE_BACKEND=local SESSION_SECRET=dev python main.py    # http://localhost:5000
+
+# 테스트
+STORE_BACKEND=local python -m pytest -q
+
+# 배포 (워커는 반드시 1개 — 연습 세션이 프로세스 메모리에 있음)
+gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 8 main:app
+```
+자세한 배포 절차는 [DEPLOYMENT.md](DEPLOYMENT.md) 참고.
 
 ## 보안 강화 사항
-### 차세대 부정행위 방지 시스템
-- **실제 타이핑 감지**: 최소 200회 키스트로크로 실제 연습 검증
-- **현실적 성능 범위**: 중학생 수준 벗어나는 데이터 자동 차단
-- **콘솔 해킹 완전 차단**: JavaScript 토큰 노출 방지 + 서버 측 세션 검증
-- **Rate Limiting**: 5분당 최대 3회 제출로 남용 방지
-- **시간 여유**: 5분 연습 완료 후 최대 20분까지 기록 저장 허용
+### 부정행위 방지 시스템 (기준값은 `config.py`에서 조정)
+- **실제 타이핑 감지**: 최소 100회 키 입력(`MIN_KEYSTROKES`)
+- **타이핑 구간 검증**: 첫 키와 마지막 키 사이 최소 2분(`MIN_TYPING_SPAN_SECONDS`).
+  콘솔로 키 입력을 한꺼번에 주입하면 이 값이 0에 가까워져 걸러진다.
+- **타수 교차 검증**: 서버가 센 키 입력 수로 설명할 수 없는 타수는 거부
+- **현실적 성능 범위**: 정확도 90%↑ & 450타↑, 정확도 50%↓ & 300타↑ 등 차단
+- **점수·연습 시간 서버 계산**: 클라이언트가 보낸 값을 쓰지 않으므로 콘솔로 점수를
+  바꿔도 순위표에 반영되지 않는다
+- **1회용 토큰**: 저장 성공 시 즉시 폐기
+- **Rate Limiting**: 학번당 5분에 최대 3회 (검증을 통과한 요청만 카운트)
+- **시간 여유**: 연습 완료 후 최대 20분까지 기록 저장 허용(`SAVE_GRACE_SECONDS`)
 
 ---
 
-## 샘플 코드 스니펫
+## 코드 위치 안내
 
-### Flask 서버(보안 강화)
-```python
-from flask import Flask, request, jsonify, session
-import os, re, time, secrets
-from supabase import create_client, Client
+샘플 코드를 이 문서에 중복 유지하면 실제 코드와 어긋나기 쉬우므로, 구현은 다음
+파일을 직접 확인한다.
 
-app = Flask(__name__)
-app.secret_key = os.environ.get("SESSION_SECRET")
+| 내용 | 파일 |
+| --- | --- |
+| 라우트 전체 | `app.py` |
+| 점수 계산·검증 기준 | `scoring.py` |
+| 부정행위 방지 기준값 | `config.py` |
+| 연습 세션/키 입력 집계 | `sessions.py` |
+| Firestore / 로컬 저장소 | `store.py` |
+| 연습 모드·예문 | `content.py` |
 
-# 보안 설정
-RATE_LIMIT_WINDOW = 300  # 5분 창
-MAX_SUBMISSIONS_PER_WINDOW = 3  # 5분당 최대 3번 제출
-submission_log = {}  # {student_id: [(timestamp, ip), ...]}
-typing_sessions = {}  # {session_id: {'keystrokes': [], 'start_time': timestamp}}
-MIN_KEYSTROKES = 200  # 최소 키 입력 수
+각 규칙의 동작은 `tests/` 아래 테스트가 보장한다.
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY")
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-ID_RE = re.compile(r"^\d{5}\s[가-힣]{2,4}$")
-
-def validate_typing_activity(session_id, duration_sec):
-    """실제 타이핑 활동 검증"""
-    if session_id not in typing_sessions:
-        return False, '타이핑 세션을 찾을 수 없습니다.'
-    
-    session_data = typing_sessions[session_id]
-    keystrokes = session_data['keystrokes']
-    
-    # 최소 키 입력 수 검사
-    if len(keystrokes) < MIN_KEYSTROKES:
-        return False, f'연습이 부족합니다. 최소 {MIN_KEYSTROKES}번 이상 타이핑해주세요.'
-    
-    # 실제 타이핑 시간은 최소 4분(240초) 이상이어야 함
-    if len(keystrokes) > 0:
-        time_span = keystrokes[-1] - keystrokes[0] if len(keystrokes) > 1 else duration_sec
-        min_typing_time = 240  # 4분
-        if time_span < min_typing_time:
-            return False, '타이핑 패턴이 비정상입니다.'
-    
-    return True, 'OK'
-
-def validate_data_integrity(wpm, accuracy, score, duration_sec):
-    """데이터 무결성 검증"""
-    # 5분 연습 완료 후 학번 입력 시간까지 고려하여 넉넉하게 허용
-    if not (300 <= duration_sec <= 1200):  # 5분~20분
-        return False, '연습 시간이 비정상입니다.'
-    
-    # 현실적인 성능 범위 검사 (중학생 수준)
-    if accuracy > 85 and wpm > 300:  # 비현실적인 고성능
-        return False, '비현실적인 성능입니다.'
-    
-    if accuracy < 50 and wpm > 200:  # 정확도 낮은데 속도 높음
-        return False, '비일반적인 타이핑 패턴입니다.'
-    
-    # 점수 계산 공식 검증 (2% 오차 허용)
-    expected_score = round(max(0, wpm) * ((accuracy / 100) ** 2) * 100)
-    score_tolerance = max(1, expected_score * 0.02)
-    
-    if abs(score - expected_score) > score_tolerance:
-        return False, f'점수 계산이 비정상입니다. 예상: {expected_score}, 실제: {score}'
-    
-    return True, 'OK'
-
-@app.route('/api/keystroke', methods=['POST'])
-def record_keystroke():
-    """타이핑 활동 기록"""
-    session_id = session.get('session_id')
-    if not session_id or session_id not in typing_sessions:
-        return jsonify({'error': '유효하지 않은 세션입니다.'}), 401
-    
-    # 키스트로크 타임스탬프 기록
-    timestamp = time.time()
-    typing_sessions[session_id]['keystrokes'].append(timestamp)
-    
-    return jsonify({'success': True}), 200
-
-@app.route('/api/records', methods=['POST'])
-def create_record():
-    """연습 기록 저장 - 보안 강화 버전"""
-    # 1. 세션 검증
-    if 'practice_token' not in session:
-        return jsonify({'error': '유효하지 않은 연습 세션입니다.'}), 401
-    
-    # 2. Rate Limiting
-    client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', 
-                                   request.environ.get('REMOTE_ADDR', 'unknown'))
-    student_id = request.json.get('student_id', '')
-    if not check_rate_limit(student_id, client_ip):
-        return jsonify({'error': '너무 자주 제출했습니다.'}), 429
-    
-    # 3. 실제 타이핑 활동 검증
-    session_id = session.get('session_id')
-    duration_sec = int(request.json.get('duration_sec', 0))
-    if session_id:
-        typing_valid, typing_msg = validate_typing_activity(session_id, duration_sec)
-        if not typing_valid:
-            return jsonify({'error': typing_msg}), 400
-    
-    # 4. 데이터 무결성 검증
-    wpm = int(request.json.get('wmp', 0))
-    accuracy = float(request.json.get('accuracy', 0))
-    score = int(request.json.get('score', 0))
-    
-    is_valid, error_msg = validate_data_integrity(wpm, accuracy, score, duration_sec)
-    if not is_valid:
-        return jsonify({'error': error_msg}), 400
-    
-    # 5. 기존 저장 로직...
-    return jsonify({"ok": True})
+```bash
+STORE_BACKEND=local python -m pytest -q
+```

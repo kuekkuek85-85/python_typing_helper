@@ -4,8 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ mode_info.title }} - 파이썬 타자 도우미</title>
-    <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Bootstrap 5.3.8 / Bootstrap Icons 1.13.1 - 학교 네트워크에서 CDN이 막혀도
+         동작하도록 프로젝트에 포함했습니다. (static/vendor/README.md 참고) -->
+    <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.min.css') }}" rel="stylesheet">
+    <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
     <link href="{{ url_for('static', filename='css/custom.css') }}" rel="stylesheet">
 </head>
 <body>
@@ -35,22 +38,26 @@
             <div class="col-12">
                 <div class="card">
                     <div class="card-body">
-                        <div class="row text-center">
-                            <div class="col-md-3">
+                        <div class="row row-cols-2 row-cols-md-5 g-3 text-center">
+                            <div class="col">
                                 <h3 class="mb-1" id="timer">5:00</h3>
                                 <small class="text-muted">남은 시간</small>
                             </div>
-                            <div class="col-md-3">
+                            <div class="col">
                                 <h3 class="mb-1" id="wpm">0</h3>
                                 <small class="text-muted">분당 타수</small>
                             </div>
-                            <div class="col-md-3">
+                            <div class="col">
                                 <h3 class="mb-1" id="accuracy">100%</h3>
                                 <small class="text-muted">정확도</small>
                             </div>
-                            <div class="col-md-3">
-                                <h3 class="mb-1" id="score">0</h3>
-                                <small class="text-muted">점수</small>
+                            <div class="col">
+                                <h3 class="mb-1 text-warning" id="score">0</h3>
+                                <small class="text-muted">점수 (순위 반영)</small>
+                            </div>
+                            <div class="col">
+                                <h3 class="mb-1" id="points">0</h3>
+                                <small class="text-muted">적립 포인트</small>
                             </div>
                         </div>
                     </div>
@@ -71,7 +78,8 @@
                     <div class="card-body">
                         <!-- 문제 텍스트 표시 영역 -->
                         <div class="practice-text-container mb-4">
-                            <div id="practiceText" class="practice-text">
+                            <div id="practiceText"
+                                 class="practice-text{% if mode == '자리' %} practice-text-single-line{% endif %}">
                                 <!-- JavaScript로 동적 로드 -->
                                 연습 텍스트를 불러오는 중...
                             </div>
@@ -92,7 +100,7 @@
                                 <div class="key" data-key="9">(<br>9</div>
                                 <div class="key" data-key="0">)<br>0</div>
                                 <div class="key" data-key="-">_<br>-</div>
-                                <div class="key" data-key="+">+<br>=</div>
+                                <div class="key" data-key="=">+<br>=</div>
                                 <div class="key key-wide" data-key="Backspace">Backspace</div>
                             </div>
                             <div class="keyboard-row">
@@ -109,7 +117,7 @@
                                 <div class="key" data-key="p"><span class="key-letter">p</span></div>
                                 <div class="key" data-key="[">{<br>[</div>
                                 <div class="key" data-key="]">}<br>]</div>
-                                <div class="key key-wide" data-key="\\">|<br>\</div>
+                                <div class="key key-wide" data-key="\">|<br>\</div>
                             </div>
                             <div class="keyboard-row">
                                 <div class="key key-wide" data-key="CapsLock">Caps Lock</div>
@@ -155,13 +163,15 @@
                         <!-- 입력 영역 -->
                         <div class="mb-3">
                             <label for="userInput" class="form-label">여기에 입력하세요:</label>
-                            <textarea 
-                                class="form-control practice-input" 
-                                id="userInput" 
-                                rows="2" 
-                                placeholder="연습을 시작하려면 여기에 타이핑을 시작하세요..."
-                                disabled>
-                            </textarea>
+                            <!-- 태그 사이에 공백을 넣으면 그 공백이 입력값이 되므로 붙여 쓴다. -->
+                            <textarea
+                                class="form-control practice-input"
+                                id="userInput"
+                                rows="2"
+                                placeholder="'연습 시작' 버튼을 누르면 입력할 수 있습니다."
+                                autocomplete="off"
+                                spellcheck="false"
+                                disabled></textarea>
                         </div>
 
                         <!-- 제어 버튼 -->
@@ -190,9 +200,11 @@
                             연습 안내
                         </h6>
                         <ul class="mb-0 text-muted">
-                            <li>연습은 5분간 진행됩니다</li>
+                            <li>연습은 {{ practice_seconds // 60 }}분간 진행됩니다</li>
                             <li>시간이 끝나야만 결과를 저장할 수 있습니다</li>
-                            <li>정확도와 속도가 모두 점수에 반영됩니다</li>
+                            <li><strong>점수</strong> = 분당 타수 &times; (정확도 &divide; 100)<sup>2</sup> &times; 100
+                                &mdash; 순위표에 반영되는 점수입니다</li>
+                            <li><strong>적립 포인트</strong>는 단어를 정확히 완성할 때마다 쌓이는 재미 요소이며 순위와는 무관합니다</li>
                             <li>오타는 빨간색으로 표시됩니다</li>
                         </ul>
                     </div>
@@ -204,7 +216,7 @@
     <!-- 푸터 -->
     <footer class="mt-5 py-4 border-top">
         <div class="container text-center text-muted">
-            <p>&copy; 2025 파이썬 타자연습. 중학교 1학년 정보 교과를 위한 학습 도구입니다.</p>
+            <p>&copy; 파이썬 타자연습. 중학교 1학년 정보 교과를 위한 학습 도구입니다.</p>
         </div>
     </footer>
 
@@ -299,11 +311,15 @@
     </div>
 
     <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='vendor/bootstrap/popper.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.js') }}"></script>
     <script>
-        // 현재 연습 모드 및 보안 토큰을 JavaScript 변수로 전달
-        window.currentMode = '{{ mode }}';
-        window.practiceToken = '{{ practice_token }}';
+        // 현재 연습 모드와 1회용 연습 토큰을 전달한다.
+        // 토큰은 브라우저에서 읽을 수 있지만, 실제 부정행위 방지는 서버 검증
+        // (연습 시간·키 입력 수·점수 재계산)이 담당한다.
+        window.currentMode = {{ mode | tojson }};
+        window.practiceToken = {{ practice_token | tojson }};
+        window.practiceSeconds = {{ practice_seconds | tojson }};
     </script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>

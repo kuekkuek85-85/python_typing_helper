@@ -1,0 +1,131 @@
+name: Codex 코드 리뷰 (수동)
+
+# ⚠️ 이 워크플로는 OpenAI **API 종량제 과금**을 씁니다.
+#    ChatGPT Plus/Pro 구독과는 별도로 청구됩니다.
+#
+# 평소 PR 리뷰는 Codex GitHub 앱 연동을 쓰세요. 유료 ChatGPT 플랜에 포함되어
+# 있어 추가 비용이 없습니다 (chatgpt.com/codex → 설정 → Code review).
+# 리뷰 기준은 두 방식 모두 저장소의 AGENTS.md 를 따릅니다.
+#
+# 이 워크플로는 그 대안이 필요할 때를 위한 수동 실행용입니다. 예를 들어
+#  - Codex 앱을 연결할 수 없는 저장소에서 리뷰가 필요할 때
+#  - 플랜 사용량을 다 써서 API로 돌려야 할 때
+#
+# 자동 실행하지 않습니다. Actions 탭에서 직접 실행해야 합니다.
+# (PR마다 자동으로 돌리고 싶다면 아래 on: 에 pull_request 트리거를 추가하세요.
+#  단, 커밋마다 API 비용이 발생합니다.)
+#
+# 필요한 시크릿: OPENAI_API_KEY
+#   Settings → Secrets and variables → Actions → New repository secret
+#   없으면 리뷰를 건너뛰고 경고만 남깁니다(워크플로는 실패하지 않음).
+
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "비교 기준 브랜치 (이 브랜치와의 차이를 리뷰합니다)"
+        required: false
+        default: main
+
+concurrency:
+  group: codex-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Codex 리뷰 실행
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      final_message: ${{ steps.run_codex.outputs.final-message }}
+      has_key: ${{ steps.check_key.outputs.has_key }}
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v5
+        with:
+          # 변경분을 비교해야 하므로 전체 이력이 필요하다.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: API 키 확인
+        id: check_key
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -n "${OPENAI_API_KEY}" ]; then
+            echo "has_key=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_key=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Codex 리뷰 건너뜀::OPENAI_API_KEY 시크릿이 없습니다. 추가 비용 없이 리뷰하려면 Codex GitHub 앱 연동을 쓰세요(유료 ChatGPT 플랜 포함)."
+          fi
+
+      - name: 리뷰 범위 계산
+        if: steps.check_key.outputs.has_key == 'true'
+        env:
+          # GitHub 표현식을 셸 코드에 직접 끼워 넣지 않는다(셸 인젝션 방지).
+          DISPATCH_BASE: ${{ inputs.base }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "${DISPATCH_BASE}"
+          base_sha="$(git rev-parse FETCH_HEAD)"
+          head_sha="$(git rev-parse HEAD)"
+          echo "BASE_SHA=${base_sha}" >> "$GITHUB_ENV"
+          echo "HEAD_SHA=${head_sha}" >> "$GITHUB_ENV"
+          echo "리뷰 범위: ${base_sha}...${head_sha}"
+          git diff --stat "${base_sha}...${head_sha}"
+
+      # Codex는 이 잡의 마지막 단계여야 한다. 실행이 끝난 뒤의 러너 상태는
+      # 보장되지 않으므로(openai/codex-action docs/security.md), 결과 게시는
+      # 아래 report 잡에서 따로 처리한다.
+      - name: Codex 리뷰
+        id: run_codex
+        if: steps.check_key.outputs.has_key == 'true'
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          # 저장소는 읽고 쓰지만 네트워크는 차단되는 프로필.
+          # (권한 프로필은 Codex CLI 0.138.0 이상 필요 → codex-version을 고정하지 않는다)
+          #
+          # 주의: actionlint 1.7.12는 내장 액션 DB가 오래되어 이 입력을
+          # "not defined"라고 잘못 보고한다. openai/codex-action@v1 의 action.yml에
+          # 실제로 정의되어 있으므로 지우지 말 것.
+          permission-profile: ":workspace"
+          # safety-strategy 기본값 drop-sudo 를 그대로 쓴다.
+          # 이 값을 unsafe/read-only로 바꾸면 OPENAI_API_KEY가 프로세스 메모리에서
+          # 읽힐 수 있다(공식 보안 문서 경고).
+          #
+          # 점검 항목은 AGENTS.md 의 "Review guidelines" 한 곳에만 둔다.
+          # 여기에 복사해 두면 둘이 어긋난다(이 프로젝트가 점수 공식으로 겪은 문제).
+          prompt: |
+            이 저장소의 코드 리뷰를 수행한다.
+
+            먼저 `AGENTS.md`와 `CLAUDE.md`를 읽고, `AGENTS.md`의
+            "Review guidelines" 섹션을 리뷰 기준과 출력 형식으로 따른다.
+
+            리뷰 대상은 아래 범위의 변경분이다.
+
+                git diff ${{ env.BASE_SHA }}...${{ env.HEAD_SHA }}
+                git log --oneline ${{ env.BASE_SHA }}...${{ env.HEAD_SHA }}
+
+            필요하면 주변 파일을 열어 맥락을 확인해도 된다.
+
+  report:
+    name: 리뷰 결과 게시
+    runs-on: ubuntu-latest
+    needs: review
+    if: needs.review.outputs.has_key == 'true' && needs.review.outputs.final_message != ''
+    permissions:
+      contents: read
+    steps:
+      - name: 실행 요약에 기록
+        env:
+          CODEX_FINAL_MESSAGE: ${{ needs.review.outputs.final_message }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Codex 코드 리뷰"
+            echo
+            printf '%s\n' "${CODEX_FINAL_MESSAGE}"
+          } >> "$GITHUB_STEP_SUMMARY"
