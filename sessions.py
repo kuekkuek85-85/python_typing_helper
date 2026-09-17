@@ -273,9 +273,8 @@ def _firestore_client():
         return store.create_firestore_client()
     except Exception as error:
         raise RuntimeError(
-            'SESSION_BACKEND=firestore인데 Firestore에 연결할 수 없습니다. '
-            'FIREBASE_SERVICE_ACCOUNT_JSON(한 줄 JSON)이 설정되어 있는지 확인하세요. '
-            f'원인: {error}'
+            f'SESSION_BACKEND=firestore인데 Firestore에 연결할 수 없습니다. '
+            f'{store._credential_hint()} 원인: {error}'
         ) from error
 
 

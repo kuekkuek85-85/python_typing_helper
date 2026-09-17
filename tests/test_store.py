@@ -178,3 +178,15 @@ def test_health_reports_why_it_is_misconfigured(monkeypatch):
     assert payload['status'] == 'misconfigured'
     assert payload['backend'] == 'unavailable'
     assert any('FIREBASE_SERVICE_ACCOUNT_JSON' in p for p in payload['problems'])
+
+
+def test_missing_credentials_and_bad_credentials_give_different_advice(monkeypatch):
+    """값을 아직 안 넣은 사람에게 "한 줄 JSON인지 확인하세요"는 엉뚱한 안내다."""
+    for name in ('FIREBASE_SERVICE_ACCOUNT_JSON', 'FIREBASE_SERVICE_ACCOUNT_FILE',
+                 'GOOGLE_APPLICATION_CREDENTIALS'):
+        monkeypatch.delenv(name, raising=False)
+
+    assert '설정되어 있지 않습니다' in store._credential_hint()
+
+    monkeypatch.setenv('FIREBASE_SERVICE_ACCOUNT_JSON', '{"type": "service_account"}')
+    assert '한 줄 JSON인지' in store._credential_hint()

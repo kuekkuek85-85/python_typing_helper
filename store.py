@@ -497,6 +497,23 @@ def firebase_credentials_available() -> bool:
         return False
 
 
+def _credential_hint() -> str:
+    """자격 증명이 **아예 없는 것**과 **있는데 잘못된 것**은 할 일이 다르다.
+
+    둘을 구분하지 않으면 "한 줄 JSON인지 확인하세요"라는 안내가, 값을 아직 넣지도
+    않은 사람에게는 엉뚱하게 들린다.
+    """
+    if os.environ.get('FIREBASE_SERVICE_ACCOUNT_JSON'):
+        return 'FIREBASE_SERVICE_ACCOUNT_JSON 값이 줄바꿈 없는 한 줄 JSON인지 확인하세요.'
+
+    if any(os.environ.get(name) for name in ('FIREBASE_SERVICE_ACCOUNT_FILE',
+                                             'GOOGLE_APPLICATION_CREDENTIALS')):
+        return '지정한 서비스 계정 키 파일을 읽을 수 있는지 확인하세요.'
+
+    return ('FIREBASE_SERVICE_ACCOUNT_JSON이 설정되어 있지 않습니다. '
+            '서비스 계정 키 JSON을 줄바꿈 없는 한 줄로 넣으세요.')
+
+
 class UnavailableStore(RecordStore):
     """저장소를 만들지 못했을 때 그 자리를 대신한다.
 
@@ -541,11 +558,8 @@ def create_store() -> RecordStore:
         try:
             return FirestoreStore()
         except Exception as error:  # noqa: BLE001
-            reason = (
-                'STORE_BACKEND=firestore인데 Firestore에 연결할 수 없습니다. '
-                'FIREBASE_SERVICE_ACCOUNT_JSON이 줄바꿈 없는 한 줄 JSON인지 '
-                f'확인하세요. 원인: {error}'
-            )
+            reason = (f'STORE_BACKEND=firestore인데 Firestore에 연결할 수 없습니다. '
+                      f'{_credential_hint()} 원인: {error}')
             logger.error("%s", reason)
             return UnavailableStore(reason)
 
