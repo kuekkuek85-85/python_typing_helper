@@ -159,6 +159,8 @@ class TypingSessionRegistry:
     """
 
     backend = 'memory'
+    # firestore를 쓰려다 실패해 여기로 내려온 경우 그 이유(/health가 내보낸다).
+    reason: str | None = None
 
     def __init__(self, ttl_seconds: int | None = None):
         self._ttl = ttl_seconds if ttl_seconds is not None else config.SESSION_TTL_SECONDS
@@ -217,6 +219,7 @@ class RateLimiter:
     """학번별 제출 빈도 제한기(프로세스 메모리)."""
 
     backend = 'memory'
+    reason: str | None = None
 
     def __init__(self, window_seconds: int | None = None, max_submissions: int | None = None):
         self._window = window_seconds if window_seconds is not None else config.RATE_LIMIT_WINDOW
@@ -327,6 +330,7 @@ class FirestoreSessionRegistry:
     """
 
     backend = 'firestore'
+    reason: str | None = None
 
     def __init__(self, client=None, collection_name: str | None = None,
                  ttl_seconds: int | None = None, transactional=None):
@@ -439,6 +443,7 @@ class FirestoreRateLimiter:
     """
 
     backend = 'firestore'
+    reason: str | None = None
 
     def __init__(self, client=None, collection_name: str | None = None,
                  window_seconds: int | None = None, max_submissions: int | None = None,
@@ -508,15 +513,40 @@ def _resolve_backend() -> str:
     return 'memory'
 
 
+def _fallback_to_memory(error: Exception, factory):
+    """Firestore 백엔드를 만들지 못하면 메모리로 뜨되 이유를 남긴다.
+
+    **임포트 중에 죽으면 안 된다.** 서버리스에서는 그 예외가
+    `500 FUNCTION_INVOCATION_FAILED` 한 줄로만 보인다. 메모리 백엔드는 인스턴스가
+    여러 개면 제 역할을 못 하지만, 그건 `/health`가 알려 줄 수 있다. 죽으면
+    아무것도 알려 줄 수 없다.
+    """
+    reason = (
+        'SESSION_BACKEND=firestore인데 Firestore에 연결할 수 없어 연습 세션을 '
+        '프로세스 메모리에 둡니다. 인스턴스가 여러 개로 늘어나면 학생이 기록을 '
+        f'저장할 때 "타이핑 세션을 찾을 수 없습니다" 오류가 납니다. 원인: {error}'
+    )
+    logger.error("%s", reason)
+    instance = factory()
+    instance.reason = reason
+    return instance
+
+
 def create_session_registry():
-    """config.SESSION_BACKEND에 따라 연습 세션 보관소를 만든다."""
-    if _resolve_backend() == 'firestore':
+    """config.SESSION_BACKEND에 따라 연습 세션 보관소를 만든다(예외를 올리지 않는다)."""
+    if _resolve_backend() != 'firestore':
+        return TypingSessionRegistry()
+    try:
         return FirestoreSessionRegistry()
-    return TypingSessionRegistry()
+    except Exception as error:  # noqa: BLE001
+        return _fallback_to_memory(error, TypingSessionRegistry)
 
 
 def create_rate_limiter():
-    """config.SESSION_BACKEND에 따라 제출 빈도 제한기를 만든다."""
-    if _resolve_backend() == 'firestore':
+    """config.SESSION_BACKEND에 따라 제출 빈도 제한기를 만든다(예외를 올리지 않는다)."""
+    if _resolve_backend() != 'firestore':
+        return RateLimiter()
+    try:
         return FirestoreRateLimiter()
-    return RateLimiter()
+    except Exception as error:  # noqa: BLE001
+        return _fallback_to_memory(error, RateLimiter)

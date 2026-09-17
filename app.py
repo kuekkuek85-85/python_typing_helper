@@ -207,16 +207,32 @@ def _register_routes(app: Flask) -> None:
 
     @app.route('/health')
     def health():
-        """헬스체크 - 저장소 연결 상태 포함."""
+        """헬스체크 - 저장소 연결 상태와 **설정이 잘못된 이유**까지 알려준다.
+
+        설정 오류로 앱이 죽지 않게 해 두었으므로(store.UnavailableStore,
+        sessions._fallback_to_memory), 무엇이 잘못됐는지는 여기서 말해야 한다.
+        서버리스에서 이게 없으면 원인을 알 방법이 사실상 없다.
+        """
         record_store = _store()
+        sessions_registry = _typing_sessions()
         connected = record_store.ping()
-        return jsonify({
+
+        payload = {
             'status': 'healthy' if connected else 'unhealthy',
             'backend': record_store.backend,
             'database_connected': connected,
             # 여러 인스턴스로 뜨는 배포에서 memory면 연습 세션이 사라진다.
-            'session_backend': _typing_sessions().backend,
-        }), (200 if connected else 503)
+            'session_backend': sessions_registry.backend,
+        }
+
+        problems = [reason for reason in (getattr(record_store, 'reason', None),
+                                          getattr(sessions_registry, 'reason', None))
+                    if reason]
+        if problems:
+            payload['status'] = 'misconfigured'
+            payload['problems'] = problems
+
+        return jsonify(payload), (200 if connected and not problems else 503)
 
     @app.route('/api/practice/start', methods=['POST'])
     def start_practice():
