@@ -325,8 +325,30 @@ class LocalJsonStore(RecordStore):
         super().__init__(0 if cache_ttl_seconds is None else cache_ttl_seconds)
         self._path = path or config.LOCAL_DB_PATH
         self._lock = threading.Lock()
+        self._ensure_directory()
+
+    def _ensure_directory(self) -> bool:
+        """저장 디렉터리를 준비한다. 만들 수 없으면 경고만 남기고 False.
+
+        **여기서 예외를 올리면 안 된다.** 서버리스(Vercel)의 런타임 파일
+        시스템은 `/tmp` 말고는 읽기 전용이라 `makedirs`가 실패하는데, 이 객체는
+        `create_app()` 안에서 만들어지므로 예외가 그대로 임포트를 죽인다. 그러면
+        앱이 아예 뜨지 않고 배포 실패로만 보인다.
+
+        기록을 남기지 못하는 상태라는 건 `/health`의 `backend`와 `database_connected`가
+        이미 드러내 준다. 죽는 것보다 떠서 말해 주는 편이 낫다.
+        """
         directory = os.path.dirname(os.path.abspath(self._path))
-        os.makedirs(directory, exist_ok=True)
+        try:
+            os.makedirs(directory, exist_ok=True)
+            return True
+        except OSError as error:
+            logger.error(
+                "로컬 저장소 디렉터리를 만들 수 없습니다(%s): %s. "
+                "기록이 저장되지 않습니다 — Firebase 자격 증명을 설정하세요.",
+                directory, error,
+            )
+            return False
 
     @property
     def path(self) -> str:

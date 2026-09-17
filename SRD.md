@@ -112,7 +112,11 @@
       Firestore 쓰기가 학생당 154회에서 34회로 줄었다(저장 단계 포함).
 - [x] **최종 보고 대기**: 마지막 키 입력 묶음이 서버에 도착한 뒤 저장 화면을 연다
       (최대 3초). 보고 간격이 길어져 마지막 묶음이 가장 커졌기 때문.
-- [x] **Vercel 배포 파일**: `vercel.json`, `api/index.py`, `.vercelignore`
+- [x] **Vercel은 설정 파일 없이 배포**: Flask가 프레임워크로 감지되면 루트
+      `app.py`의 `app`이 엔트리 포인트가 되고, 프레임워크 설정이 `/api` 파일보다
+      우선하므로 `vercel.json`·`api/index.py`는 오히려 방해가 된다.
+- [x] **읽기 전용 파일 시스템에서도 앱이 뜬다**: `LocalJsonStore`가 초기화 중
+      `makedirs`로 죽어 서버리스에서 배포 실패로만 보였다.
 - [x] **`/health`에 `session_backend` 추가** — 잘못된 백엔드 선택을 배포 직후 확인
 - [x] **자격 증명 없는 서버리스에서도 앱이 뜬다**: auto가 자격 증명을 확인하지 않아
       임포트 중 크래시했다. 죽은 함수는 원인을 알려 주지 않지만 /health는 알려 준다.
@@ -214,7 +218,7 @@ STORE_BACKEND=local python -m pytest -q
 gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 8 main:app
 
 # 배포 ② Vercel(서버리스) — 연습 세션을 Firestore에 둔다
-#   SESSION_BACKEND=firestore, 엔트리 포인트는 api/index.py
+#   SESSION_BACKEND=firestore. 설정 파일 없이 app.py의 app을 Vercel이 찾는다.
 ```
 자세한 배포 절차는 [DEPLOYMENT.md](DEPLOYMENT.md) 참고.
 

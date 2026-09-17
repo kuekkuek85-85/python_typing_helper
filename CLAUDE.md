@@ -28,9 +28,8 @@ STORE_BACKEND=local .venv/bin/python -m pytest -q
 | `content.py` | 4개 연습 모드 정의와 연습 텍스트 생성 |
 | `scoring.py` | 학번 검증, **점수 계산**, 기록 무결성 검증 |
 | `sessions.py` | 연습 세션 추적(키 입력 집계)과 제출 빈도 제한. 메모리 / Firestore 백엔드 |
-| `api/index.py` | Vercel 서버리스 엔트리 포인트(`vercel.json`이 모든 경로를 넘긴다) |
 | `store.py` | 기록 저장소. Firestore 백엔드 + 로컬 JSON 백엔드 |
-| `main.py` | WSGI 엔트리 포인트 |
+| `main.py` | WSGI 엔트리 포인트 (`gunicorn main:app`). Vercel은 `app.py`의 `app`을 직접 찾는다 |
 | `static/js/app.js` | 연습 화면 로직(타이머, 하이라이트, 통계, 저장) |
 | `static/js/leaderboard.js` | 홈 화면 명예의 전당 |
 | `static/vendor/` | Bootstrap·Bootstrap Icons 사본 (CDN 차단 대비) |
