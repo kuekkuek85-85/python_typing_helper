@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import secrets
@@ -63,6 +64,10 @@ def create_app(record_store: store_module.RecordStore | None = None,
         MAX_CONTENT_LENGTH=32 * 1024,
         # 서버리스에서는 static/도 이 함수가 서빙한다(vercel.json이 모든 경로를
         # 넘긴다). Bootstrap 사본이 200KB쯤 되므로 브라우저가 캐시하게 둔다.
+        #
+        # 긴 캐시는 URL에 내용 해시가 붙어 있을 때만 안전하다. 아래
+        # `_add_static_version`이 붙인다 — 없으면 app.js를 고쳐도 학생 브라우저가
+        # 최대 7일 동안 옛 파일을 쓰고, 화면 점수와 저장 점수가 어긋난다.
         SEND_FILE_MAX_AGE_DEFAULT=timedelta(days=7),
     )
     app.json.ensure_ascii = False
@@ -72,11 +77,48 @@ def create_app(record_store: store_module.RecordStore | None = None,
         typing_sessions or sessions_module.create_session_registry())
     app.extensions['rate_limiter'] = rate_limiter or sessions_module.create_rate_limiter()
 
+    _register_static_versioning(app)
     _register_routes(app)
     logger.info('저장소 백엔드: %s, 연습 세션 백엔드: %s',
                 app.extensions['record_store'].backend,
                 app.extensions['typing_sessions'].backend)
     return app
+
+
+# --- 정적 파일 캐시 무효화 ------------------------------------------------
+def _register_static_versioning(app: Flask) -> None:
+    """`url_for('static', ...)`에 내용 해시를 붙인다.
+
+    정적 파일에 7일 캐시를 걸어 두었는데 파일명이 고정이라, 이게 없으면 배포로
+    고친 내용이 학생 브라우저에 최대 일주일 동안 반영되지 않는다. 특히 `app.js`의
+    점수 공식이 그렇다 — 화면 점수와 서버가 저장하는 점수가 어긋나고, 그건 이
+    프로젝트에서 이미 한 번 겪은 실패다(CLAUDE.md 2번 규칙).
+
+    해시는 한 번 계산해 두고 재사용한다. 배포마다 프로세스가 새로 뜨므로 파일이
+    바뀌면 자연히 다시 계산된다.
+    """
+    versions: dict[str, str] = {}
+
+    def version_for(filename: str) -> str | None:
+        if filename in versions:
+            return versions[filename]
+        try:
+            path = os.path.join(app.static_folder, filename)
+            with open(path, 'rb') as file:
+                digest = hashlib.sha256(file.read()).hexdigest()[:8]
+        except OSError:
+            # 없는 파일이면 굳이 막지 않는다. 404는 라우팅이 낼 일이다.
+            return None
+        versions[filename] = digest
+        return digest
+
+    @app.url_defaults
+    def add_static_version(endpoint, values):  # noqa: ANN001 - Flask 훅 시그니처
+        if endpoint != 'static' or 'filename' not in values or 'v' in values:
+            return
+        digest = version_for(values['filename'])
+        if digest:
+            values['v'] = digest
 
 
 # --- 헬퍼 ----------------------------------------------------------------

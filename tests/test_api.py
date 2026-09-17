@@ -235,3 +235,58 @@ def test_stats_endpoint_is_removed(client):
     """
     response = client.get('/api/records/stats')
     assert response.status_code == 404
+
+
+# --- 정적 파일 캐시 ------------------------------------------------------
+def test_static_urls_carry_a_content_hash(client):
+    """정적 파일에 7일 캐시를 걸었으므로 URL에 내용 해시가 붙어야 한다.
+
+    해시가 없으면 app.js를 고쳐도 학생 브라우저가 최대 일주일 동안 옛 파일을
+    쓴다. 점수 공식이 바뀌면 화면 점수와 저장 점수가 어긋난다(CLAUDE.md 2번).
+    """
+    import re
+
+    page = client.get('/practice/자리').get_data(as_text=True)
+    scripts = re.findall(r'src="(/static/js/[^"]+)"', page)
+
+    assert scripts, '연습 화면이 JS를 불러오지 않는다'
+    for url in scripts:
+        assert re.search(r'\?v=[0-9a-f]{8}$', url), f'해시가 없다: {url}'
+
+
+def test_static_hash_changes_with_content(app, tmp_path):
+    """내용이 바뀌면 해시도 바뀌어야 캐시가 갱신된다."""
+    import re
+
+    import app as app_module
+
+    static_dir = tmp_path / 'static'
+    static_dir.mkdir()
+    target = static_dir / 'probe.js'
+
+    def url_for_probe():
+        flask_app = app_module.create_app(record_store=app.extensions['record_store'])
+        flask_app.static_folder = str(static_dir)
+        app_module._register_static_versioning(flask_app)
+        with flask_app.test_request_context():
+            from flask import url_for
+            return url_for('static', filename='probe.js')
+
+    target.write_text('console.log(1);')
+    first = url_for_probe()
+    target.write_text('console.log(2);')
+    second = url_for_probe()
+
+    assert re.search(r'\?v=[0-9a-f]{8}$', first)
+    assert first != second, '내용이 바뀌었는데 URL이 같으면 캐시가 안 갱신된다'
+
+
+def test_missing_static_file_does_not_break_rendering(app):
+    """없는 파일이라도 url_for가 예외를 내면 안 된다(404는 라우팅이 낼 일)."""
+    with app.test_request_context():
+        from flask import url_for
+        url = url_for('static', filename='없는파일.js')
+
+    # 해시는 붙지 않지만 URL 자체는 정상적으로 만들어진다.
+    assert url.startswith('/static/')
+    assert '?v=' not in url

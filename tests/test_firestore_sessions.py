@@ -10,6 +10,8 @@
 고정하는 것은 읽고-고쳐-쓰는 로직과 문서 모양이다.
 """
 
+from datetime import datetime, timezone
+
 import pytest
 
 import config
@@ -83,6 +85,11 @@ def _identity(func):
 @pytest.fixture
 def fake_client():
     return FakeClient()
+
+
+@pytest.fixture
+def limiter(fake_client):
+    return sessions.FirestoreRateLimiter(client=fake_client, transactional=_identity)
 
 
 @pytest.fixture
@@ -283,14 +290,27 @@ def test_document_round_trip_preserves_state(registry, fake_client):
     assert restored.first_keystroke_at is not None
 
 
-def test_expires_at_is_written_for_ttl_policy(registry, fake_client):
-    """버려진 세션은 Firestore TTL 정책이 지운다. 그 기준 필드가 있어야 한다."""
+def test_expires_at_is_a_timestamp_not_a_number(registry, fake_client, limiter):
+    """TTL 정책은 **타임스탬프 타입 필드만** 만료 대상으로 본다.
+
+    Unix 초(float)로 쓰면 정책을 걸어 두어도 아무것도 지워지지 않고, 버려진 세션
+    문서가 영원히 쌓인다. 안내한 대로 따랐는데 동작하지 않는 쪽이 더 나쁘다.
+    """
     registry.create('sess-8')
     registry.start('sess-8')
+    limiter.allow('10101 가나다')
 
-    collection = fake_client.collection(config.FIRESTORE_SESSION_COLLECTION)
-    for stored in collection.docs.values():
-        assert stored['expires_at'] > stored['created_at']
+    now = datetime.now(timezone.utc)
+    checked = 0
+    for name in (config.FIRESTORE_SESSION_COLLECTION, config.FIRESTORE_RATE_LIMIT_COLLECTION):
+        for stored in fake_client.collection(name).docs.values():
+            expires_at = stored['expires_at']
+            assert isinstance(expires_at, datetime), f'{name}: {type(expires_at)}'
+            assert expires_at.tzinfo is not None, f'{name}: 시간대가 없으면 해석이 갈린다'
+            assert expires_at > now
+            checked += 1
+
+    assert checked == 2, '두 컬렉션 모두 확인해야 한다'
 
 
 def test_from_dict_tolerates_missing_and_broken_fields():
@@ -313,30 +333,37 @@ def test_session_document_id_cannot_be_reserved():
 def test_write_count_for_one_practice_is_bounded(fake_client):
     """5분 연습 한 번의 Firestore 쓰기 횟수를 고정한다.
 
-    이 숫자가 늘면 무료 한도(하루 2만 회)가 그만큼 빨리 소진된다.
+    이 숫자가 늘면 무료 한도(하루 쓰기 2만 회)가 그만큼 빨리 소진된다.
     KEYSTROKE_FLUSH_MS를 줄이면 여기가 먼저 깨진다.
+
+    **연습 세션 컬렉션만 세면 안 된다.** 저장이 성공하면 빈도 제한 문서 갱신과
+    기록 추가도 각각 과금되는 쓰기다. 여기서는 fake_client의 모든 컬렉션을 센다.
     """
     registry = _new_registry(fake_client)
+    limiter = sessions.FirestoreRateLimiter(client=fake_client, transactional=_identity)
     reports = config.PRACTICE_SECONDS // (config.KEYSTROKE_FLUSH_MS // 1000)
 
     registry.create('sess-9')
     registry.start('sess-9')
     for _ in range(reports):
         registry.add_keystrokes('sess-9', 10)
-    registry.discard('sess-9')
+    limiter.allow('10101 가나다')     # 저장 직전 빈도 제한
+    registry.discard('sess-9')        # 저장 후 세션 폐기
 
-    collection = fake_client.collection(config.FIRESTORE_SESSION_COLLECTION)
-    # create 1 + start 1 + 보고 횟수
-    assert collection.writes == reports + 2
-    assert collection.writes <= 40, '학생 한 명당 쓰기가 40회를 넘으면 비용을 다시 계산해야 한다'
+    writes = sum(c.writes for c in fake_client.collections.values())
+    deletes = sum(c.deletes for c in fake_client.collections.values())
+
+    # 세션 create 1 + start 1 + 보고 30 + 빈도 제한 1 = 33, 그리고 기록 저장 1
+    # (records 컬렉션은 store.py가 쓰므로 이 더블에는 잡히지 않는다)
+    assert writes == reports + 3
+    assert deletes == 1
+
+    total = writes + deletes + 1   # +1 = store.add()의 기록 저장
+    assert total <= 40, (
+        f'학생 한 명당 {total}회. 40회를 넘으면 DEPLOYMENT.md의 비용 계산을 다시 해야 한다')
 
 
 # --- 제출 빈도 제한 -------------------------------------------------------
-@pytest.fixture
-def limiter(fake_client):
-    return sessions.FirestoreRateLimiter(client=fake_client, transactional=_identity)
-
-
 def test_rate_limit_is_shared_across_instances(fake_client):
     def limiter_instance():
         return sessions.FirestoreRateLimiter(client=fake_client, transactional=_identity)

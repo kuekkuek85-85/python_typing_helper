@@ -20,6 +20,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 
 import config
 
@@ -338,8 +339,14 @@ class FirestoreSessionRegistry:
         return (self._client.collection(self._collection_name)
                 .document(_session_doc_id(session_id)))
 
-    def _expires_at(self) -> float:
-        return time.time() + self._ttl
+    def _expires_at(self) -> datetime:
+        """TTL 정책이 볼 만료 시각.
+
+        **반드시 datetime이어야 한다.** Firestore TTL 정책은 타임스탬프 타입
+        필드만 만료 대상으로 본다. Unix 초(float)로 쓰면 정책을 걸어 두어도
+        아무것도 지워지지 않고 문서가 계속 쌓인다.
+        """
+        return datetime.now(timezone.utc) + timedelta(seconds=self._ttl)
 
     def create(self, session_id: str) -> TypingActivity:
         activity = TypingActivity()
@@ -416,7 +423,11 @@ def _allow_within_window(transaction, doc_ref, now: float, window: float, maximu
         return False
 
     attempts.append(now)
-    transaction.set(doc_ref, {'attempts': attempts, 'expires_at': now + window})
+    transaction.set(doc_ref, {
+        'attempts': attempts,
+        # 세션 문서와 같은 이유로 타임스탬프 타입이어야 한다(TTL 정책).
+        'expires_at': datetime.fromtimestamp(now + window, tz=timezone.utc),
+    })
     return True
 
 
