@@ -78,6 +78,8 @@ class RecordStore:
     """저장소 공통 로직(정렬·페이지네이션·캐시)."""
 
     backend = 'base'
+    # 설정이 잘못돼 제 역할을 못 하는 경우 그 이유. /health가 그대로 내보낸다.
+    reason: str | None = None
 
     def __init__(self, cache_ttl_seconds: int | None = None):
         self._cache_ttl = (cache_ttl_seconds if cache_ttl_seconds is not None
@@ -495,8 +497,57 @@ def firebase_credentials_available() -> bool:
         return False
 
 
+def _credential_hint() -> str:
+    """자격 증명이 **아예 없는 것**과 **있는데 잘못된 것**은 할 일이 다르다.
+
+    둘을 구분하지 않으면 "한 줄 JSON인지 확인하세요"라는 안내가, 값을 아직 넣지도
+    않은 사람에게는 엉뚱하게 들린다.
+    """
+    if os.environ.get('FIREBASE_SERVICE_ACCOUNT_JSON'):
+        return 'FIREBASE_SERVICE_ACCOUNT_JSON 값이 줄바꿈 없는 한 줄 JSON인지 확인하세요.'
+
+    if any(os.environ.get(name) for name in ('FIREBASE_SERVICE_ACCOUNT_FILE',
+                                             'GOOGLE_APPLICATION_CREDENTIALS')):
+        return '지정한 서비스 계정 키 파일을 읽을 수 있는지 확인하세요.'
+
+    return ('FIREBASE_SERVICE_ACCOUNT_JSON이 설정되어 있지 않습니다. '
+            '서비스 계정 키 JSON을 줄바꿈 없는 한 줄로 넣으세요.')
+
+
+class UnavailableStore(RecordStore):
+    """저장소를 만들지 못했을 때 그 자리를 대신한다.
+
+    **설정이 잘못됐다고 앱이 죽으면 안 된다.** 서버리스에서는 임포트 중 예외가
+    `500 FUNCTION_INVOCATION_FAILED` 한 줄로만 보여서, 무엇이 잘못됐는지 알 길이
+    없다. 대신 떠서 `/health`가 이유를 말하게 한다.
+
+    그렇다고 로컬 JSON으로 조용히 대체하지는 않는다. 명시적으로 Firestore를
+    지정했는데 로컬 파일에 쓰면 학생 기록이 사라진다. 저장은 거부하고 이유를
+    알린다.
+    """
+
+    backend = 'unavailable'
+
+    def __init__(self, reason: str):
+        super().__init__(0)
+        self.reason = reason
+
+    def ping(self) -> bool:
+        return False
+
+    def _fetch_mode(self, mode: str) -> list[dict]:
+        raise RuntimeError(self.reason)
+
+    def _persist(self, record: dict) -> dict:
+        raise RuntimeError(self.reason)
+
+
 def create_store() -> RecordStore:
-    """config.STORE_BACKEND 설정에 따라 저장소를 만든다."""
+    """config.STORE_BACKEND 설정에 따라 저장소를 만든다.
+
+    **이 함수는 예외를 올리지 않는다.** create_app()이 임포트 중에 호출하므로
+    여기서 죽으면 앱이 아예 뜨지 않고 원인도 보이지 않는다.
+    """
     backend = config.STORE_BACKEND
 
     if backend == 'local':
@@ -504,7 +555,13 @@ def create_store() -> RecordStore:
         return LocalJsonStore()
 
     if backend == 'firestore':
-        return FirestoreStore()
+        try:
+            return FirestoreStore()
+        except Exception as error:  # noqa: BLE001
+            reason = (f'STORE_BACKEND=firestore인데 Firestore에 연결할 수 없습니다. '
+                      f'{_credential_hint()} 원인: {error}')
+            logger.error("%s", reason)
+            return UnavailableStore(reason)
 
     if backend != 'auto':
         logger.warning("알 수 없는 STORE_BACKEND=%r → auto로 처리합니다.", backend)

@@ -327,3 +327,52 @@ def test_python_version_pin_matches_pyproject():
 
     # 이 테스트를 돌리는 파이썬도 같은 조건을 만족해야 한다.
     assert sys.version_info[:2] >= minimum
+
+
+# --- 한글 URL 경로 -------------------------------------------------------
+def _wsgi_get(app, path_info):
+    """PATH_INFO를 날것 그대로 넣어 요청한다(test_client는 항상 표준형으로 만든다)."""
+    import io
+
+    environ = {
+        'REQUEST_METHOD': 'GET', 'PATH_INFO': path_info, 'QUERY_STRING': '',
+        'SERVER_NAME': 'localhost', 'SERVER_PORT': '80', 'SERVER_PROTOCOL': 'HTTP/1.1',
+        'wsgi.version': (1, 0), 'wsgi.url_scheme': 'http',
+        'wsgi.input': io.BytesIO(b''), 'wsgi.errors': io.BytesIO(),
+        'wsgi.multithread': False, 'wsgi.multiprocess': False, 'wsgi.run_once': False,
+    }
+    captured = []
+    body = app(environ, lambda status, headers: captured.append(status))
+    list(body)
+    return int(captured[0].split()[0])
+
+
+def test_korean_path_works_whichever_encoding_the_server_uses(app):
+    """이 앱은 URL 경로에 한글을 쓴다(`/practice/자리`).
+
+    서버마다 PATH_INFO를 넘기는 방식이 달라서, 고치지 않으면 환경에 따라 404나
+    500이 난다. Vercel은 퍼센트 인코딩을 남긴 채로 준다 — 실제로 운영에서
+    `/practice/%EC%9E%90%EB%A6%AC`가 404였다.
+    """
+    path = '/practice/자리'
+
+    # WSGI 표준: UTF-8 바이트를 latin-1로 디코딩한 문자열 (gunicorn)
+    assert _wsgi_get(app, path.encode('utf-8').decode('latin-1')) == 200
+    # 퍼센트 인코딩이 남은 경우 (Vercel)
+    assert _wsgi_get(app, '/practice/%EC%9E%90%EB%A6%AC') == 200
+    # 이미 사람이 읽는 문자열로 디코딩된 경우
+    assert _wsgi_get(app, path) == 200
+
+
+def test_korean_api_path_works_percent_encoded(app):
+    assert _wsgi_get(app, '/api/practice-text/%EB%82%B1%EB%A7%90') == 200
+
+
+def test_unknown_mode_still_404s_after_normalising(app):
+    """정규화가 없는 모드까지 통과시키면 안 된다."""
+    assert _wsgi_get(app, '/practice/%EC%97%86%EC%9D%8C') == 404
+
+
+def test_ascii_paths_are_untouched(app):
+    assert _wsgi_get(app, '/health') == 200
+    assert _wsgi_get(app, '/') == 200

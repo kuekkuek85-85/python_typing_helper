@@ -127,3 +127,66 @@ def test_app_boots_when_storage_directory_cannot_be_created(monkeypatch):
     response = flask_app.test_client().get('/health')
     assert response.status_code in (200, 503)
     assert response.get_json()['backend'] == 'local'
+
+
+# --- 설정 오류로 죽지 않는다 ---------------------------------------------
+def test_broken_firestore_config_does_not_crash_the_app(monkeypatch):
+    """`STORE_BACKEND=firestore`인데 자격 증명이 잘못돼도 앱은 떠야 한다.
+
+    서버리스에서 임포트 중 예외는 `500 FUNCTION_INVOCATION_FAILED` 한 줄로만
+    보인다. 무엇이 잘못됐는지 알 방법이 없다. 대신 떠서 /health가 말하게 한다.
+    """
+    import config
+
+    monkeypatch.setattr(config, 'STORE_BACKEND', 'firestore')
+    monkeypatch.setattr(store, 'FirestoreStore', lambda *a, **k: (_ for _ in ()).throw(
+        ValueError('Invalid control character at: line 1 column 172')))
+
+    record_store = store.create_store()
+
+    assert record_store.backend == 'unavailable'
+    assert record_store.reason and 'FIREBASE_SERVICE_ACCOUNT_JSON' in record_store.reason
+    assert record_store.ping() is False
+
+
+def test_unavailable_store_refuses_to_save_rather_than_losing_records(monkeypatch):
+    """로컬 파일로 조용히 대체하지 않는다 — 그러면 기록이 사라진다."""
+    import pytest
+
+    record_store = store.UnavailableStore('자격 증명이 잘못되었습니다')
+
+    with pytest.raises(RuntimeError, match='자격 증명'):
+        record_store.add(student_id='10101 가나다', mode='자리', wpm=100,
+                         accuracy=95.0, score=9025, duration_sec=300)
+
+    with pytest.raises(RuntimeError):
+        record_store.top('자리')
+
+
+def test_health_reports_why_it_is_misconfigured(monkeypatch):
+    """/health가 원인을 그대로 알려줘야 한다. 이게 없으면 진단할 방법이 없다."""
+    import app as app_module
+
+    broken = store.UnavailableStore('FIREBASE_SERVICE_ACCOUNT_JSON이 한 줄 JSON이 아닙니다')
+    flask_app = app_module.create_app(record_store=broken)
+    flask_app.config.update(TESTING=True)
+
+    response = flask_app.test_client().get('/health')
+    payload = response.get_json()
+
+    assert response.status_code == 503
+    assert payload['status'] == 'misconfigured'
+    assert payload['backend'] == 'unavailable'
+    assert any('FIREBASE_SERVICE_ACCOUNT_JSON' in p for p in payload['problems'])
+
+
+def test_missing_credentials_and_bad_credentials_give_different_advice(monkeypatch):
+    """값을 아직 안 넣은 사람에게 "한 줄 JSON인지 확인하세요"는 엉뚱한 안내다."""
+    for name in ('FIREBASE_SERVICE_ACCOUNT_JSON', 'FIREBASE_SERVICE_ACCOUNT_FILE',
+                 'GOOGLE_APPLICATION_CREDENTIALS'):
+        monkeypatch.delenv(name, raising=False)
+
+    assert '설정되어 있지 않습니다' in store._credential_hint()
+
+    monkeypatch.setenv('FIREBASE_SERVICE_ACCOUNT_JSON', '{"type": "service_account"}')
+    assert '한 줄 JSON인지' in store._credential_hint()

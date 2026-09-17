@@ -538,3 +538,26 @@ def test_full_practice_flow_over_http(record_store, fake_client):
 
     # 저장 후 세션 문서는 폐기된다(1회용 토큰).
     assert registry.get(session_id) is None
+
+
+def test_broken_session_backend_falls_back_to_memory_with_a_reason(monkeypatch):
+    """세션 백엔드를 만들지 못해도 앱은 뜨되, 이유가 /health에 남아야 한다."""
+    monkeypatch.setattr(config, 'SESSION_BACKEND', 'firestore')
+    monkeypatch.setattr(sessions, 'FirestoreSessionRegistry',
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError('연결 실패')))
+
+    registry = sessions.create_session_registry()
+
+    assert registry.backend == 'memory'
+    assert registry.reason and '타이핑 세션을 찾을 수 없습니다' in registry.reason
+
+
+def test_broken_rate_limiter_falls_back_to_memory(monkeypatch):
+    monkeypatch.setattr(config, 'SESSION_BACKEND', 'firestore')
+    monkeypatch.setattr(sessions, 'FirestoreRateLimiter',
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError('연결 실패')))
+
+    limiter = sessions.create_rate_limiter()
+
+    assert limiter.backend == 'memory'
+    assert limiter.allow('10101 가나다') is True
