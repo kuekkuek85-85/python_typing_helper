@@ -32,7 +32,9 @@
     var audioContext = null;
 
     // 키 입력 보고 버퍼 (매 글자마다 요청하지 않고 묶어서 보낸다)
-    var KEYSTROKE_FLUSH_MS = 2000;
+    // 간격은 서버가 정한다(config.KEYSTROKE_FLUSH_MS). 연습 세션을 Firestore에
+    // 두는 배포에서는 이 간격이 곧 쓰기 횟수라서, 여기서 임의로 줄이면 안 된다.
+    var KEYSTROKE_FLUSH_MS = window.keystrokeFlushMs || 10000;
     var pendingKeystrokes = 0;
     var keystrokeFlushTimer = null;
 
@@ -101,12 +103,12 @@
             window.clearTimeout(keystrokeFlushTimer);
             keystrokeFlushTimer = null;
         }
-        if (pendingKeystrokes <= 0) return;
+        if (pendingKeystrokes <= 0) return Promise.resolve();
 
         var count = pendingKeystrokes;
         pendingKeystrokes = 0;
 
-        fetch('/api/keystroke', {
+        return fetch('/api/keystroke', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ count: count, practice_token: window.practiceToken })
@@ -114,6 +116,21 @@
             // 사용자 경험을 방해하지 않도록 조용히 넘어간다.
             console.log('키 입력 기록 실패:', error);
         });
+    }
+
+    // 마지막 키 입력 보고가 서버에 도착할 때까지 기다린다(최대 FINAL_FLUSH_WAIT_MS).
+    //
+    // 보고 간격이 10초라 마지막 묶음이 가장 크다. 이게 저장 요청보다 늦게 도착하면
+    // 서버가 인정한 키 입력 수가 모자라 정상 기록이 "타이핑 패턴이 비정상"으로
+    // 거부될 수 있다. 그렇다고 무한정 기다리면 요청이 실패했을 때 저장 화면이
+    // 영영 안 뜨므로 상한을 둔다.
+    var FINAL_FLUSH_WAIT_MS = 3000;
+
+    function waitForFinalFlush(flushPromise) {
+        var timeout = new Promise(function (resolve) {
+            window.setTimeout(resolve, FINAL_FLUSH_WAIT_MS);
+        });
+        return Promise.race([Promise.resolve(flushPromise), timeout]);
     }
 
     // --- 초기화 -----------------------------------------------------------
@@ -322,14 +339,16 @@
         elements.timer.textContent = '0:00';
         elements.timer.style.color = 'var(--bs-danger)';
 
-        flushKeystrokes();
+        var finalFlush = flushKeystrokes();
         updateStats();
         playCompleteSound();
 
         elements.startBtn.innerHTML = '<i class="bi bi-check-circle-fill"></i> 연습 완료!';
         elements.startBtn.disabled = true;
 
-        window.setTimeout(showCompleteModal, 200);
+        waitForFinalFlush(finalFlush).then(function () {
+            window.setTimeout(showCompleteModal, 200);
+        });
     }
 
     function resetPractice() {

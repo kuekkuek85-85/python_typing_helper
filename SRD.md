@@ -8,7 +8,7 @@
 ---
 
 ## 0) 준비
-- 개발 환경: Python 3.11 + Claude Code (이전에는 Replit)
+- 개발 환경: Python 3.12 + Claude Code (이전에는 Replit). 버전은 `.python-version` 한 곳에서 정한다
 - **환경 변수** 설정 (`.env.example` 참고)
   - `SESSION_SECRET` = (랜덤 시크릿 키, 필수)
   - `FIREBASE_SERVICE_ACCOUNT_JSON` = (Firebase 서비스 계정 JSON 한 줄)
@@ -100,6 +100,34 @@
 - [x] **보안 토큰 숨김**: JavaScript에서 토큰 직접 접근 방지
 - [x] **연습 완료 표시**: 버튼 상태 변경으로 완료 상태 명확히 표시
 
+## v0.8.3 서버리스(Vercel) 대응 (완료)
+- [x] **연습 세션 저장소 분리**: `SESSION_BACKEND`로 메모리/Firestore 선택
+      (`sessions.FirestoreSessionRegistry`, `FirestoreRateLimiter`).
+      두 백엔드는 상태 전이 함수를 공유해 부정행위 판정이 환경에 따라 달라지지 않는다.
+- [x] **토큰 버킷을 트랜잭션으로 보호**: 읽고-고쳐-쓰는 연산이라 동시 요청이
+      서로의 차감을 덮어쓸 수 있었다. 실제 Firestore에 동시 요청 10개로 검증.
+- [x] **키 입력 보고 실패를 흡수**: 트랜잭션 재시도가 소진돼도 연습 중에 500이
+      나지 않는다(그 묶음만 버린다). 실제 Firestore에서 재현된 문제.
+- [x] **보고 간격 2초 → 10초**(`KEYSTROKE_FLUSH_MS`, 서버가 정해 화면에 내려줌).
+      Firestore 쓰기가 학생당 154회에서 34회로 줄었다(저장 단계 포함).
+- [x] **최종 보고 대기**: 마지막 키 입력 묶음이 서버에 도착한 뒤 저장 화면을 연다
+      (최대 3초). 보고 간격이 길어져 마지막 묶음이 가장 커졌기 때문.
+- [x] **Vercel은 설정 파일 없이 배포**: Flask가 프레임워크로 감지되면 루트
+      `app.py`의 `app`이 엔트리 포인트가 되고, 프레임워크 설정이 `/api` 파일보다
+      우선하므로 `vercel.json`·`api/index.py`는 오히려 방해가 된다.
+- [x] **읽기 전용 파일 시스템에서도 앱이 뜬다**: `LocalJsonStore`가 초기화 중
+      `makedirs`로 죽어 서버리스에서 배포 실패로만 보였다.
+- [x] **`.python-version`을 3.12로**: Vercel 빌드 실패의 실제 원인이었다.
+      `uv.lock`이 있으면 Vercel이 `uv sync --frozen`을 쓰는데 uv가 이 파일을
+      그대로 읽어, 배포 환경에 없는 3.11을 요구하며 몇 초 만에 죽었다.
+- [x] **`/health`에 `session_backend` 추가** — 잘못된 백엔드 선택을 배포 직후 확인
+- [x] **자격 증명 없는 서버리스에서도 앱이 뜬다**: auto가 자격 증명을 확인하지 않아
+      임포트 중 크래시했다. 죽은 함수는 원인을 알려 주지 않지만 /health는 알려 준다.
+- [x] **`expires_at`을 Firestore 타임스탬프로**: float으로 쓰고 있어서 안내한 TTL
+      정책이 아무것도 지우지 않았다(Codex 리뷰).
+- [x] **정적 파일 URL에 내용 해시**: 7일 캐시를 걸면서 해시를 안 붙여, 점수 공식을
+      고쳐도 학생 브라우저가 일주일 동안 옛 JS를 쓸 수 있었다(Codex 리뷰).
+
 ## v0.8.0 Firebase 이전 & 전체 코드 정리 (완료)
 ### 데이터베이스
 - [x] **Supabase(PostgreSQL) → Firebase Firestore 이전**: SQLAlchemy 제거, Admin SDK 사용
@@ -189,8 +217,11 @@ STORE_BACKEND=local SESSION_SECRET=dev python main.py    # http://localhost:5000
 # 테스트
 STORE_BACKEND=local python -m pytest -q
 
-# 배포 (워커는 반드시 1개 — 연습 세션이 프로세스 메모리에 있음)
+# 배포 ① 일반 서버 — 워커는 반드시 1개(연습 세션이 프로세스 메모리에 있음)
 gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 8 main:app
+
+# 배포 ② Vercel(서버리스) — 연습 세션을 Firestore에 둔다
+#   SESSION_BACKEND=firestore. 설정 파일 없이 app.py의 app을 Vercel이 찾는다.
 ```
 자세한 배포 절차는 [DEPLOYMENT.md](DEPLOYMENT.md) 참고.
 

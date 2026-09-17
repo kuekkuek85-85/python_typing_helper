@@ -69,10 +69,23 @@ WARNING 상위 문서만 읽는 경로를 쓸 수 없어 모드별 전체 읽기
 
 ---
 
-## 3. ⚠️ 워커는 반드시 1개
+## 3. ⚠️ 연습 세션을 어디에 둘 것인가
 
-연습 세션과 키 입력 집계가 **프로세스 메모리**에 있습니다. 워커를 2개 이상 띄우면
-학생이 기록을 저장할 때 "타이핑 세션을 찾을 수 없습니다" 오류가 납니다.
+연습 중인 학생의 키 입력 집계는 요청 여러 개에 걸쳐 이어집니다. 5분 연습 한 번에
+**약 33개의 요청**(시작 1 + 키 입력 보고 30여 개 + 저장 1)이 오가고, 이들이 **같은
+집계를 보아야** 저장이 됩니다. 이 집계를 어디에 두는지가 `SESSION_BACKEND`입니다.
+
+| 값 | 어디에 두는가 | 쓰는 곳 |
+| --- | --- | --- |
+| `memory` | 프로세스 메모리 | 워커/인스턴스가 **1개로 고정**된 배포 |
+| `firestore` | Firestore 문서 | 서버리스(Vercel)처럼 인스턴스가 늘어나는 배포 |
+| `auto`(기본) | Vercel이면 firestore, 아니면 memory | — |
+
+잘못 고르면 증상은 하나입니다 — 학생이 저장할 때
+**"타이핑 세션을 찾을 수 없습니다"**. 배포 후 `/health`의 `session_backend`로
+어느 쪽이 선택됐는지 확인하세요.
+
+### memory를 쓸 때: 워커는 반드시 1개
 
 ```
 gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 60 main:app
@@ -81,6 +94,43 @@ gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 60 main:app
 `Procfile`에 이 설정이 들어 있습니다. 자동 확장(autoscale) 배포도 인스턴스가
 여러 개로 늘어나면 같은 문제가 생기니, **최대 인스턴스를 1로 제한**하세요.
 한 반(30명) 규모는 단일 인스턴스 + 8스레드로 충분합니다.
+
+### firestore를 쓸 때: 쓰기 횟수
+
+학생 한 명이 5분 연습을 한 번 하고 기록을 저장하면 이렇게 듭니다.
+
+| 무엇 | 횟수 |
+| --- | --- |
+| 세션 문서 생성 | 쓰기 1 |
+| 연습 시작 기록 | 쓰기 1 |
+| 키 입력 보고(10초마다) | 쓰기 30 |
+| 제출 빈도 제한 갱신 | 쓰기 1 |
+| 기록 저장(`records`) | 쓰기 1 |
+| 세션 문서 폐기 | 삭제 1 |
+| **합계** | **쓰기 34 + 삭제 1** |
+
+한 반 30명이면 쓰기 1,020회, 하루 4개 반이면 약 4,100회입니다.
+Firestore 무료 한도는 **하루 쓰기 2만 회 / 삭제 2만 회**(별도 집계)라 여유가 있습니다.
+
+학생이 저장하지 않고 탭을 닫으면 세션 폐기 삭제가 없는 대신 TTL 삭제가 나중에
+일어납니다. 어느 쪽이든 학생당 삭제는 1회입니다.
+
+이 숫자는 `KEYSTROKE_FLUSH_MS`(기본 10초)가 결정합니다. 줄이면 부정행위 판정이
+조금 더 촘촘해지지만 쓰기가 그만큼 늘어납니다 — 2초로 되돌리면 키 입력 보고만
+150회가 되어(학생당 154회) 한 반 수업 4~5번이면 무료 한도를 넘습니다.
+
+**세션 문서 자동 삭제(TTL 정책)를 걸어 두세요.** 학생이 저장하면 그 세션 문서는
+바로 지워지지만, 중간에 탭을 닫으면 문서가 남습니다.
+
+1. Firebase 콘솔 → Firestore Database → **TTL** 탭 → 정책 만들기
+2. 컬렉션 그룹 `practice_sessions`, 타임스탬프 필드 `expires_at`
+3. `rate_limits` 컬렉션에도 같은 필드로 하나 더 만듭니다
+
+정책이 없어도 동작에는 문제가 없고 문서만 쌓입니다.
+
+> TTL 정책은 **타임스탬프 타입 필드만** 만료 대상으로 봅니다. 이 앱은
+> `expires_at`을 UTC `datetime`으로 씁니다(테스트가 타입을 고정합니다).
+> Unix 초 같은 숫자로 바꾸면 정책을 걸어 두어도 아무것도 지워지지 않습니다.
 
 ---
 
@@ -107,18 +157,76 @@ gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 60 main:app
 `.replit`의 run 명령이 이미 `--workers 1 --threads 8`입니다. Secrets에 환경 변수를
 등록하면 됩니다.
 
+### Vercel
+
+Vercel은 서버리스라 인스턴스 수를 1로 고정할 수 없습니다. 그래서
+**`SESSION_BACKEND=firestore`가 필수**입니다(설정하지 않아도 `auto`가 Vercel을
+감지해 firestore를 고르지만, 명시하는 편이 안전합니다).
+
+**별도의 설정 파일이 필요 없습니다.** Vercel은 `requirements.txt`의 Flask를 보고
+프레임워크를 감지한 뒤, 프로젝트 루트 `app.py`의 `app` 변수를 엔트리 포인트로
+씁니다. 정적 파일과 모든 경로는 Flask가 그대로 처리합니다.
+
+> ⚠️ **`.python-version`은 Vercel 빌드를 죽일 수 있습니다.**
+>
+> 이 저장소에 `uv.lock`이 있으므로 Vercel은 `pip` 대신 `uv sync --frozen`으로
+> 의존성을 설치합니다. 그런데 **uv는 `.python-version`을 그대로 읽습니다.**
+> 거기 적힌 버전을 Vercel이 갖고 있지 않으면 빌드가 몇 초 만에 죽습니다.
+>
+> ```
+> Warning: Python version "3.11" detected in .python-version is not installed
+>          and will be ignored.
+> Using python version: 3.12
+> Installing required dependencies from uv.lock...
+> error: No interpreter found for Python 3.11 in managed installations or search path
+> ```
+>
+> Vercel 자신은 "무시한다"고 경고만 남기고 3.12를 고르지만, 그 뒤에 실행되는
+> uv는 3.11을 요구해 실패합니다. **`.python-version`은 Vercel이 실제로 쓰는
+> 버전과 같아야 합니다**(현재 `3.12`). 테스트가 이 값과 `pyproject.toml`의
+> `requires-python` 정합성을 고정합니다.
+
+> `vercel.json`이나 `api/index.py`를 두지 마세요. Flask가 프레임워크로 감지되면
+> **프레임워크 설정이 `/api` 파일보다 우선**하므로 `api/` 아래 파일은 함수가
+> 되지 않고, 거기로 향하는 `rewrites`는 존재하지 않는 대상을 가리키게 됩니다.
+
+1. Vercel → **Add New… → Project** → 이 GitHub 저장소를 선택
+2. **Framework Preset은 Vercel이 감지한 값(Flask)을 그대로 둡니다.**
+   `Other`로 바꾸면 자동 감지가 꺼져 앱이 뜨지 않습니다.
+3. Build Command / Output Directory / Install Command / Root Directory는
+   **모두 비워 둡니다**(Override 꺼짐). Output Directory가 설정돼 있으면
+   `No Output Directory named "public" found`로 빌드가 실패합니다.
+4. **Environment Variables**에 `.env`의 내용을 붙여넣기
+   - Vercel은 `.env` 파일 전체를 한 번에 붙여넣을 수 있습니다
+   - `FIREBASE_SERVICE_ACCOUNT_JSON`은 **줄바꿈 없이 한 줄**이어야 합니다
+5. Deploy
+
+**알아 둘 점**
+
+- **콜드 스타트**: 한동안 아무도 안 쓰면 첫 요청이 1~2초 걸립니다. 수업 시작
+  전에 홈 화면을 한 번 열어 두면 첫 학생이 기다리지 않습니다.
+- **런타임 파일 시스템은 읽기 전용**입니다(`/tmp` 제외). 로컬 JSON 저장소는
+  쓰지 못하므로 Firebase 자격 증명이 반드시 있어야 합니다. 자격 증명이 없어도
+  앱은 뜨지만 `/health`가 `backend: local`로 알려 주고 기록은 저장되지 않습니다.
+- Firestore TTL 정책을 꼭 걸어 두세요(위 3장 참고).
+
 ---
 
 ## 5. 배포 후 확인
 
 ```bash
 curl https://<도메인>/health
-# {"status":"healthy","backend":"firestore","database_connected":true}
+# {"status":"healthy","backend":"firestore","database_connected":true,
+#  "session_backend":"firestore"}
 ```
 
-`backend`가 `local`로 나오면 Firebase 자격 증명이 인식되지 않아 로컬 파일 저장소로
-동작하는 상태입니다. 대부분의 배포 환경은 디스크가 초기화되므로 **기록이 사라집니다.**
-환경 변수를 다시 확인하세요.
+확인할 값이 두 개입니다.
+
+- **`backend`가 `local`이면** Firebase 자격 증명이 인식되지 않아 로컬 파일 저장소로
+  동작하는 상태입니다. 대부분의 배포 환경은 디스크가 초기화되므로
+  **기록이 사라집니다.** 환경 변수를 다시 확인하세요.
+- **Vercel인데 `session_backend`가 `memory`이면** 학생이 기록을 저장할 수 없습니다.
+  `SESSION_BACKEND=firestore`를 설정하고 다시 배포하세요.
 
 그다음 실제 흐름을 한 번 점검합니다.
 
@@ -135,7 +243,8 @@ curl https://<도메인>/health
 | 증상 | 원인 / 조치 |
 | --- | --- |
 | `/health`의 `backend`가 `local` | Firebase 환경 변수 누락 또는 JSON 형식 오류. 서버 로그의 "Firestore 초기화 실패" 확인 |
-| "타이핑 세션을 찾을 수 없습니다" | 워커/인스턴스가 2개 이상. 1개로 줄이기 |
+| "타이핑 세션을 찾을 수 없습니다" | `session_backend`가 `memory`인데 인스턴스가 2개 이상. 인스턴스를 1개로 줄이거나 `SESSION_BACKEND=firestore` |
+| Vercel 첫 요청이 느림 | 콜드 스타트(1~2초). 수업 전에 홈 화면을 한 번 열어 두기 |
 | "인증 토큰이 일치하지 않습니다" | 연습 페이지를 새로고침하지 않고 오래 열어둔 경우. 다시 연습 시작 |
 | 모달·탭이 동작하지 않음 | `static/vendor/` 파일이 배포에 포함됐는지 확인 |
 | 저장 버튼이 계속 비활성 | 학번 형식이 `12345 홍길동` (5자리 + 공백 + 한글 2~4자)인지 확인 |

@@ -84,3 +84,46 @@ def test_corrupted_local_file_does_not_crash(tmp_path):
     # 손상된 파일이어도 새 기록은 저장된다.
     _add(record_store, '10701 가나다')
     assert len(record_store.top('자리')) == 1
+
+
+def test_read_only_filesystem_does_not_crash_at_startup(tmp_path, monkeypatch):
+    """읽기 전용 파일 시스템에서도 저장소 객체를 만들 수 있어야 한다.
+
+    서버리스(Vercel)의 런타임 파일 시스템은 /tmp 말고는 읽기 전용이다.
+    LocalJsonStore는 create_app() 안에서 만들어지므로, 여기서 예외가 올라가면
+    앱이 임포트 중에 죽고 배포 실패로만 보인다. 기록을 못 남긴다는 사실은
+    /health가 알려 주므로, 죽는 것보다 뜨는 편이 낫다.
+    """
+    import os
+
+    def read_only(*args, **kwargs):
+        raise OSError(30, 'Read-only file system')
+
+    monkeypatch.setattr(os, 'makedirs', read_only)
+
+    record_store = store.LocalJsonStore(path=str(tmp_path / 'nope' / 'records.json'))
+
+    # 뜨기는 하되, 기록이 없다는 것은 정직하게 드러낸다.
+    assert record_store.backend == 'local'
+    assert record_store.top('자리') == []
+
+
+def test_app_boots_when_storage_directory_cannot_be_created(monkeypatch):
+    """앱 전체가 뜨는지 확인한다(임포트 경로 전체)."""
+    import os
+
+    import app as app_module
+    import config
+
+    monkeypatch.setattr(config, 'STORE_BACKEND', 'local')
+    monkeypatch.setattr(config, 'LOCAL_DB_PATH', '/읽기전용/records.json')
+    monkeypatch.setattr(config, 'SESSION_BACKEND', 'memory')
+    monkeypatch.setattr(os, 'makedirs', lambda *a, **k: (_ for _ in ()).throw(
+        OSError(30, 'Read-only file system')))
+
+    flask_app = app_module.create_app()
+    flask_app.config.update(TESTING=True)
+
+    response = flask_app.test_client().get('/health')
+    assert response.status_code in (200, 503)
+    assert response.get_json()['backend'] == 'local'

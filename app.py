@@ -6,9 +6,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import secrets
+from datetime import timedelta
 
 from flask import Flask, jsonify, render_template, request, session
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -16,12 +18,16 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 import config
 import content
 import scoring
+import sessions as sessions_module
 import store as store_module
-from sessions import RateLimiter, TypingSessionRegistry
 
 logger = logging.getLogger(__name__)
 
-# 한 번의 요청으로 보고할 수 있는 최대 키 입력 수(클라이언트는 약 2초마다 묶어 보낸다).
+# 한 번의 요청으로 보고할 수 있는 최대 키 입력 수.
+# 클라이언트는 config.KEYSTROKE_FLUSH_MS 간격으로 묶어 보낸다. 그 사이에 사람이
+# 칠 수 있는 양보다 넉넉해야 하지만(기본 10초 × 8타/초 = 80), 무한정 받아 주면
+# 한 번의 요청으로 큰 수를 주장할 수 있으므로 상한을 둔다. 실제 인정량은
+# 토큰 버킷이 다시 한 번 깎는다(sessions.TypingActivity.credit).
 MAX_KEYSTROKES_PER_REQUEST = 200
 
 
@@ -43,7 +49,8 @@ def _resolve_secret_key() -> str:
     return secrets.token_urlsafe(32)
 
 
-def create_app(record_store: store_module.RecordStore | None = None) -> Flask:
+def create_app(record_store: store_module.RecordStore | None = None,
+               typing_sessions=None, rate_limiter=None) -> Flask:
     _configure_logging()
 
     app = Flask(__name__)
@@ -55,16 +62,63 @@ def create_app(record_store: store_module.RecordStore | None = None) -> Flask:
         SESSION_COOKIE_SECURE=config.SESSION_COOKIE_SECURE,
         # 이 앱의 요청 본문은 모두 작은 JSON이다. 과도한 본문은 미리 차단한다.
         MAX_CONTENT_LENGTH=32 * 1024,
+        # 서버리스에서는 static/도 이 함수가 서빙한다(vercel.json이 모든 경로를
+        # 넘긴다). Bootstrap 사본이 200KB쯤 되므로 브라우저가 캐시하게 둔다.
+        #
+        # 긴 캐시는 URL에 내용 해시가 붙어 있을 때만 안전하다. 아래
+        # `_add_static_version`이 붙인다 — 없으면 app.js를 고쳐도 학생 브라우저가
+        # 최대 7일 동안 옛 파일을 쓰고, 화면 점수와 저장 점수가 어긋난다.
+        SEND_FILE_MAX_AGE_DEFAULT=timedelta(days=7),
     )
     app.json.ensure_ascii = False
 
     app.extensions['record_store'] = record_store or store_module.create_store()
-    app.extensions['typing_sessions'] = TypingSessionRegistry()
-    app.extensions['rate_limiter'] = RateLimiter()
+    app.extensions['typing_sessions'] = (
+        typing_sessions or sessions_module.create_session_registry())
+    app.extensions['rate_limiter'] = rate_limiter or sessions_module.create_rate_limiter()
 
+    _register_static_versioning(app)
     _register_routes(app)
-    logger.info('저장소 백엔드: %s', app.extensions['record_store'].backend)
+    logger.info('저장소 백엔드: %s, 연습 세션 백엔드: %s',
+                app.extensions['record_store'].backend,
+                app.extensions['typing_sessions'].backend)
     return app
+
+
+# --- 정적 파일 캐시 무효화 ------------------------------------------------
+def _register_static_versioning(app: Flask) -> None:
+    """`url_for('static', ...)`에 내용 해시를 붙인다.
+
+    정적 파일에 7일 캐시를 걸어 두었는데 파일명이 고정이라, 이게 없으면 배포로
+    고친 내용이 학생 브라우저에 최대 일주일 동안 반영되지 않는다. 특히 `app.js`의
+    점수 공식이 그렇다 — 화면 점수와 서버가 저장하는 점수가 어긋나고, 그건 이
+    프로젝트에서 이미 한 번 겪은 실패다(CLAUDE.md 2번 규칙).
+
+    해시는 한 번 계산해 두고 재사용한다. 배포마다 프로세스가 새로 뜨므로 파일이
+    바뀌면 자연히 다시 계산된다.
+    """
+    versions: dict[str, str] = {}
+
+    def version_for(filename: str) -> str | None:
+        if filename in versions:
+            return versions[filename]
+        try:
+            path = os.path.join(app.static_folder, filename)
+            with open(path, 'rb') as file:
+                digest = hashlib.sha256(file.read()).hexdigest()[:8]
+        except OSError:
+            # 없는 파일이면 굳이 막지 않는다. 404는 라우팅이 낼 일이다.
+            return None
+        versions[filename] = digest
+        return digest
+
+    @app.url_defaults
+    def add_static_version(endpoint, values):  # noqa: ANN001 - Flask 훅 시그니처
+        if endpoint != 'static' or 'filename' not in values or 'v' in values:
+            return
+        digest = version_for(values['filename'])
+        if digest:
+            values['v'] = digest
 
 
 # --- 헬퍼 ----------------------------------------------------------------
@@ -73,12 +127,12 @@ def _store() -> store_module.RecordStore:
     return current_app.extensions['record_store']
 
 
-def _typing_sessions() -> TypingSessionRegistry:
+def _typing_sessions():
     from flask import current_app
     return current_app.extensions['typing_sessions']
 
 
-def _rate_limiter() -> RateLimiter:
+def _rate_limiter():
     from flask import current_app
     return current_app.extensions['rate_limiter']
 
@@ -148,6 +202,7 @@ def _register_routes(app: Flask) -> None:
             mode_info=content.PRACTICE_MODES[mode],
             practice_token=practice_token,
             practice_seconds=config.PRACTICE_SECONDS,
+            keystroke_flush_ms=config.KEYSTROKE_FLUSH_MS,
         )
 
     @app.route('/health')
@@ -159,6 +214,8 @@ def _register_routes(app: Flask) -> None:
             'status': 'healthy' if connected else 'unhealthy',
             'backend': record_store.backend,
             'database_connected': connected,
+            # 여러 인스턴스로 뜨는 배포에서 memory면 연습 세션이 사라진다.
+            'session_backend': _typing_sessions().backend,
         }), (200 if connected else 503)
 
     @app.route('/api/practice/start', methods=['POST'])

@@ -235,3 +235,95 @@ def test_stats_endpoint_is_removed(client):
     """
     response = client.get('/api/records/stats')
     assert response.status_code == 404
+
+
+# --- 정적 파일 캐시 ------------------------------------------------------
+def test_static_urls_carry_a_content_hash(client):
+    """정적 파일에 7일 캐시를 걸었으므로 URL에 내용 해시가 붙어야 한다.
+
+    해시가 없으면 app.js를 고쳐도 학생 브라우저가 최대 일주일 동안 옛 파일을
+    쓴다. 점수 공식이 바뀌면 화면 점수와 저장 점수가 어긋난다(CLAUDE.md 2번).
+    """
+    import re
+
+    page = client.get('/practice/자리').get_data(as_text=True)
+    scripts = re.findall(r'src="(/static/js/[^"]+)"', page)
+
+    assert scripts, '연습 화면이 JS를 불러오지 않는다'
+    for url in scripts:
+        assert re.search(r'\?v=[0-9a-f]{8}$', url), f'해시가 없다: {url}'
+
+
+def test_static_hash_changes_with_content(app, tmp_path):
+    """내용이 바뀌면 해시도 바뀌어야 캐시가 갱신된다."""
+    import re
+
+    import app as app_module
+
+    static_dir = tmp_path / 'static'
+    static_dir.mkdir()
+    target = static_dir / 'probe.js'
+
+    def url_for_probe():
+        flask_app = app_module.create_app(record_store=app.extensions['record_store'])
+        flask_app.static_folder = str(static_dir)
+        app_module._register_static_versioning(flask_app)
+        with flask_app.test_request_context():
+            from flask import url_for
+            return url_for('static', filename='probe.js')
+
+    target.write_text('console.log(1);')
+    first = url_for_probe()
+    target.write_text('console.log(2);')
+    second = url_for_probe()
+
+    assert re.search(r'\?v=[0-9a-f]{8}$', first)
+    assert first != second, '내용이 바뀌었는데 URL이 같으면 캐시가 안 갱신된다'
+
+
+def test_missing_static_file_does_not_break_rendering(app):
+    """없는 파일이라도 url_for가 예외를 내면 안 된다(404는 라우팅이 낼 일)."""
+    with app.test_request_context():
+        from flask import url_for
+        url = url_for('static', filename='없는파일.js')
+
+    # 해시는 붙지 않지만 URL 자체는 정상적으로 만들어진다.
+    assert url.startswith('/static/')
+    assert '?v=' not in url
+
+
+# --- 배포 환경 정합성 --------------------------------------------------
+def test_python_version_pin_matches_pyproject():
+    """`.python-version`이 `pyproject.toml`의 requires-python을 만족해야 한다.
+
+    이 파일은 로컬·CI·**Vercel 빌드(uv sync)** 가 모두 읽는다. 여기 적힌 버전을
+    배포 환경이 갖고 있지 않으면 빌드가 이 메시지로 죽는다.
+
+        error: No interpreter found for Python 3.11 in managed installations
+               or search path
+
+    Vercel은 이 파일을 "무시한다"고 경고만 남기고 자기 버전을 고르지만, 그 뒤에
+    실행되는 uv는 이 파일을 그대로 읽는다. 둘이 어긋나면 배포가 실패한다.
+    """
+    import pathlib
+    import re
+    import sys
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    pinned = root.joinpath('.python-version').read_text(encoding='utf-8').strip()
+    pyproject = root.joinpath('pyproject.toml').read_text(encoding='utf-8')
+
+    required = re.search(r'requires-python\s*=\s*"([^"]+)"', pyproject)
+    assert required, 'pyproject.toml에 requires-python이 없다'
+
+    lower_bound = re.search(r'>=\s*(\d+)\.(\d+)', required.group(1))
+    assert lower_bound, f'requires-python 형식을 읽을 수 없다: {required.group(1)}'
+
+    pinned_parts = tuple(int(part) for part in pinned.split('.')[:2])
+    minimum = (int(lower_bound.group(1)), int(lower_bound.group(2)))
+
+    assert pinned_parts >= minimum, (
+        f'.python-version({pinned})이 requires-python({required.group(1)})보다 낮다')
+
+    # 이 테스트를 돌리는 파이썬도 같은 조건을 만족해야 한다.
+    assert sys.version_info[:2] >= minimum
