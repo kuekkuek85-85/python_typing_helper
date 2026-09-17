@@ -11,6 +11,7 @@ import logging
 import os
 import secrets
 from datetime import timedelta
+from urllib.parse import unquote_to_bytes
 
 from flask import Flask, jsonify, render_template, request, session
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -55,7 +56,9 @@ def create_app(record_store: store_module.RecordStore | None = None,
 
     app = Flask(__name__)
     app.secret_key = _resolve_secret_key()
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1, x_for=1)
+    # 경로 정규화가 가장 바깥이어야 한다 — 라우팅 전에 PATH_INFO를 고쳐야 한다.
+    app.wsgi_app = NormalizePathEncoding(
+        ProxyFix(app.wsgi_app, x_proto=1, x_host=1, x_for=1))
     app.config.update(
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE='Lax',
@@ -83,6 +86,41 @@ def create_app(record_store: store_module.RecordStore | None = None,
                 app.extensions['record_store'].backend,
                 app.extensions['typing_sessions'].backend)
     return app
+
+
+# --- 경로 인코딩 정규화 ----------------------------------------------------
+class NormalizePathEncoding:
+    """`PATH_INFO`를 WSGI 표준 형태(UTF-8 바이트를 latin-1로 디코딩한 문자열)로 맞춘다.
+
+    이 앱은 URL 경로에 한글을 쓴다(`/practice/자리`, `/api/practice-text/자리`).
+    그런데 서버가 `PATH_INFO`를 넘기는 방식이 환경마다 다르다.
+
+    | 들어오는 형태 | 고치지 않으면 |
+    | --- | --- |
+    | 표준(UTF-8 바이트 → latin-1 문자열) | 정상 |
+    | 퍼센트 인코딩이 남은 `%EC%9E%90%EB%A6%AC` | **404** — Vercel이 이렇게 준다 |
+    | 이미 디코딩된 `자리` | **500** — werkzeug의 latin-1 인코딩이 실패 |
+
+    gunicorn은 표준대로 주므로 기존 배포에서는 이 미들웨어가 아무 일도 하지 않는다.
+    """
+
+    def __init__(self, wsgi_app):
+        self.wsgi_app = wsgi_app
+
+    def __call__(self, environ, start_response):
+        path = environ.get('PATH_INFO', '')
+
+        if '%' in path:
+            # 퍼센트 인코딩이 남아 있다. 바이트로 되돌린 뒤 표준 형태로 바꾼다.
+            environ['PATH_INFO'] = unquote_to_bytes(path).decode('latin-1')
+        else:
+            try:
+                path.encode('latin-1')
+            except UnicodeEncodeError:
+                # 이미 사람이 읽는 문자열로 디코딩돼 있다. 표준 형태로 되돌린다.
+                environ['PATH_INFO'] = path.encode('utf-8').decode('latin-1')
+
+        return self.wsgi_app(environ, start_response)
 
 
 # --- 정적 파일 캐시 무효화 ------------------------------------------------
