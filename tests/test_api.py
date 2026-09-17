@@ -376,3 +376,37 @@ def test_unknown_mode_still_404s_after_normalising(app):
 def test_ascii_paths_are_untouched(app):
     assert _wsgi_get(app, '/health') == 200
     assert _wsgi_get(app, '/') == 200
+
+
+# --- 홈 화면에서 열려 있는 모드 -------------------------------------------
+def test_only_available_modes_get_a_start_link(client):
+    """`content.PRACTICE_MODES`의 `available`이 홈 화면 버튼을 결정한다.
+
+    예전에는 템플릿에 모드 이름이 하드코딩돼 있어, 모드를 열고 닫을 때마다
+    템플릿을 고쳐야 했다.
+    """
+    import re
+    from urllib.parse import unquote
+
+    import content
+
+    page = client.get('/').get_data(as_text=True)
+    linked = {unquote(m) for m in re.findall(r'href="/practice/([^"?]+)"', page)}
+
+    expected = {mode for mode, info in content.PRACTICE_MODES.items() if info['available']}
+    assert linked == expected, f'링크된 모드 {linked} != 열어 둔 모드 {expected}'
+
+
+def test_closed_modes_show_the_coming_soon_button(client):
+    import content
+
+    page = client.get('/').get_data(as_text=True)
+    closed = [m for m, info in content.PRACTICE_MODES.items() if not info['available']]
+
+    assert closed, '닫아 둔 모드가 하나도 없다면 이 테스트는 의미가 없다'
+    assert page.count('coming-soon-btn') == len(closed)
+
+
+def test_closed_modes_still_work_by_direct_url(client):
+    """홈 화면에서 가렸을 뿐 기능을 없앤 것은 아니다(문장/문단과 같은 취급)."""
+    assert client.get('/practice/낱말').status_code == 200

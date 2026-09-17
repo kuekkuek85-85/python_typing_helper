@@ -2,30 +2,42 @@
 
 import random
 
+# 홈 화면에서 어떤 모드를 열어 둘지는 **여기 `available` 한 곳**에서 정한다.
+# 예전에는 템플릿의 `{% if mode_key == '자리' %}` 조건에 흩어져 있었다.
+#
+# `available: False`인 모드는 홈 화면에서 '추후 제공' 안내만 뜬다. API와 연습
+# 로직은 그대로 동작하므로, 주소를 직접 아는 사람은 들어갈 수 있다. 수업 중
+# 학생이 다른 모드로 새는 것을 막는 용도이지 접근 차단이 아니다.
 PRACTICE_MODES = {
     '자리': {
         'title': '자리 연습',
         'description': '파이썬 키워드와 기호를 연습하세요',
         'icon': '⌨️',
         'color': 'primary',
+        'available': True,
     },
     '낱말': {
         'title': '낱말 연습',
         'description': '파이썬 키워드와 함수명을 연습하세요',
         'icon': '📝',
         'color': 'success',
+        'available': False,
+        # 다시 열 때 이 배지가 함께 돌아온다.
+        'badge': 'BETA',
     },
     '문장': {
         'title': '문장 연습',
         'description': '파이썬 구문과 표현식을 연습하세요',
         'icon': '📋',
         'color': 'info',
+        'available': False,
     },
     '문단': {
         'title': '문단 연습',
         'description': '완전한 파이썬 코드 블록을 연습하세요',
         'icon': '📄',
         'color': 'warning',
+        'available': False,
     },
 }
 

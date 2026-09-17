@@ -65,24 +65,21 @@
                         <p class="card-text text-muted">
                             {{ mode_data.description }}
                         </p>
-                        {% if mode_key == '자리' %}
-                        <a href="{{ url_for('practice', mode=mode_key) }}" 
-                           class="btn btn-{{ mode_data.color }} btn-lg w-100">
+                        {# 어떤 모드를 여는지는 content.PRACTICE_MODES의 available이 정한다 #}
+                        {% if mode_data.available %}
+                        <a href="{{ url_for('practice', mode=mode_key) }}"
+                           class="btn btn-{{ mode_data.color }} btn-lg w-100{% if mode_data.badge %} position-relative{% endif %}">
                             <i class="bi bi-play-fill"></i>
                             시작하기
-                        </a>
-                        {% elif mode_key == '낱말' %}
-                        <a href="{{ url_for('practice', mode=mode_key) }}" 
-                           class="btn btn-{{ mode_data.color }} btn-lg w-100 position-relative">
-                            <i class="bi bi-play-fill"></i>
-                            시작하기
+                            {% if mode_data.badge %}
                             <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-warning text-dark">
-                                BETA
+                                {{ mode_data.badge }}
                                 <span class="visually-hidden">베타 버전</span>
                             </span>
+                            {% endif %}
                         </a>
                         {% else %}
-                        <button class="btn btn-{{ mode_data.color }} btn-lg w-100 coming-soon-btn" 
+                        <button class="btn btn-{{ mode_data.color }} btn-lg w-100 coming-soon-btn"
                                 data-bs-toggle="modal" data-bs-target="#comingSoonModal">
                             <i class="bi bi-clock"></i>
                             시작하기
@@ -170,11 +167,16 @@
                                     <div class="text-center py-5" id="{{ mode_key }}-empty" style="display: none;">
                                         <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
                                         <h5 class="mt-3">아직 기록이 없습니다</h5>
+                                        {# 닫아 둔 모드는 여기서도 들여보내지 않는다 #}
+                                        {% if mode_data.available %}
                                         <p class="text-muted">{{ mode_data.title }}에서 첫 번째 도전자가 되어보세요!</p>
                                         <a href="{{ url_for('practice', mode=mode_key) }}" class="btn btn-primary">
                                             <i class="bi bi-play-fill"></i>
                                             {{ mode_data.title }} 시작하기
                                         </a>
+                                        {% else %}
+                                        <p class="text-muted">{{ mode_data.title }}은 아직 열려 있지 않습니다.</p>
+                                        {% endif %}
                                     </div>
                                 </div>
                                 {% endfor %}
