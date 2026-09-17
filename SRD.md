@@ -8,7 +8,7 @@
 ---
 
 ## 0) 준비
-- 개발 환경: Python 3.11 + Claude Code (이전에는 Replit)
+- 개발 환경: Python 3.12 + Claude Code (이전에는 Replit). 버전은 `.python-version` 한 곳에서 정한다
 - **환경 변수** 설정 (`.env.example` 참고)
   - `SESSION_SECRET` = (랜덤 시크릿 키, 필수)
   - `FIREBASE_SERVICE_ACCOUNT_JSON` = (Firebase 서비스 계정 JSON 한 줄)
@@ -117,6 +117,9 @@
       우선하므로 `vercel.json`·`api/index.py`는 오히려 방해가 된다.
 - [x] **읽기 전용 파일 시스템에서도 앱이 뜬다**: `LocalJsonStore`가 초기화 중
       `makedirs`로 죽어 서버리스에서 배포 실패로만 보였다.
+- [x] **`.python-version`을 3.12로**: Vercel 빌드 실패의 실제 원인이었다.
+      `uv.lock`이 있으면 Vercel이 `uv sync --frozen`을 쓰는데 uv가 이 파일을
+      그대로 읽어, 배포 환경에 없는 3.11을 요구하며 몇 초 만에 죽었다.
 - [x] **`/health`에 `session_backend` 추가** — 잘못된 백엔드 선택을 배포 직후 확인
 - [x] **자격 증명 없는 서버리스에서도 앱이 뜬다**: auto가 자격 증명을 확인하지 않아
       임포트 중 크래시했다. 죽은 함수는 원인을 알려 주지 않지만 /health는 알려 준다.

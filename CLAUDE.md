@@ -105,7 +105,21 @@ STORE_BACKEND=local .venv/bin/python -m pytest -q
 Firestore에는 UTC로 저장하고, API 응답에서 `+09:00`이 붙은 ISO 문자열로 변환한다
 (`store.to_api_dict`). 브라우저는 이 값을 그대로 해석하면 된다.
 
-### 6) 외부 라이브러리는 CDN이 아니라 프로젝트에 포함
+### 6) 파이썬 버전은 `.python-version` 한 곳에서 정한다
+로컬·CI(`python-version-file`)·**Vercel 빌드**가 모두 이 파일을 읽는다.
+
+Vercel은 `uv.lock`이 있으면 `pip` 대신 `uv sync --frozen`으로 설치하는데,
+**uv가 `.python-version`을 그대로 읽는다.** 거기 적힌 버전이 배포 환경에 없으면
+빌드가 몇 초 만에 죽는다(`No interpreter found for Python 3.11`). Vercel 자신은
+"무시한다"고 경고만 남기므로 로그를 끝까지 봐야 원인이 보인다.
+
+**`pyproject.toml`의 `requires-python`과 함께 고친다** — 테스트가 정합성을 고정한다.
+
+한 가지 알고 쓰는 어긋남: CI는 `requirements.txt`(느슨한 `>=`)로 설치하고
+Vercel은 `uv.lock`(고정 버전)으로 설치한다. 둘이 벌어지면 CI가 통과한 조합과
+운영이 도는 조합이 달라질 수 있다.
+
+### 7) 외부 라이브러리는 CDN이 아니라 프로젝트에 포함
 학교 네트워크에서 CDN이 막히면 Bootstrap JS가 없어 모달이 안 뜨고 학생이 기록을
 저장할 수 없다. `static/vendor/`의 사본을 쓴다. 업데이트 방법은
 `static/vendor/README.md` 참고.

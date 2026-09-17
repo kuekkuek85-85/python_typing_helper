@@ -167,6 +167,25 @@ Vercel은 서버리스라 인스턴스 수를 1로 고정할 수 없습니다. �
 프레임워크를 감지한 뒤, 프로젝트 루트 `app.py`의 `app` 변수를 엔트리 포인트로
 씁니다. 정적 파일과 모든 경로는 Flask가 그대로 처리합니다.
 
+> ⚠️ **`.python-version`은 Vercel 빌드를 죽일 수 있습니다.**
+>
+> 이 저장소에 `uv.lock`이 있으므로 Vercel은 `pip` 대신 `uv sync --frozen`으로
+> 의존성을 설치합니다. 그런데 **uv는 `.python-version`을 그대로 읽습니다.**
+> 거기 적힌 버전을 Vercel이 갖고 있지 않으면 빌드가 몇 초 만에 죽습니다.
+>
+> ```
+> Warning: Python version "3.11" detected in .python-version is not installed
+>          and will be ignored.
+> Using python version: 3.12
+> Installing required dependencies from uv.lock...
+> error: No interpreter found for Python 3.11 in managed installations or search path
+> ```
+>
+> Vercel 자신은 "무시한다"고 경고만 남기고 3.12를 고르지만, 그 뒤에 실행되는
+> uv는 3.11을 요구해 실패합니다. **`.python-version`은 Vercel이 실제로 쓰는
+> 버전과 같아야 합니다**(현재 `3.12`). 테스트가 이 값과 `pyproject.toml`의
+> `requires-python` 정합성을 고정합니다.
+
 > `vercel.json`이나 `api/index.py`를 두지 마세요. Flask가 프레임워크로 감지되면
 > **프레임워크 설정이 `/api` 파일보다 우선**하므로 `api/` 아래 파일은 함수가
 > 되지 않고, 거기로 향하는 `rewrites`는 존재하지 않는 대상을 가리키게 됩니다.

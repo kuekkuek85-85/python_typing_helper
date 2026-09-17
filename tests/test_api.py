@@ -290,3 +290,40 @@ def test_missing_static_file_does_not_break_rendering(app):
     # 해시는 붙지 않지만 URL 자체는 정상적으로 만들어진다.
     assert url.startswith('/static/')
     assert '?v=' not in url
+
+
+# --- 배포 환경 정합성 --------------------------------------------------
+def test_python_version_pin_matches_pyproject():
+    """`.python-version`이 `pyproject.toml`의 requires-python을 만족해야 한다.
+
+    이 파일은 로컬·CI·**Vercel 빌드(uv sync)** 가 모두 읽는다. 여기 적힌 버전을
+    배포 환경이 갖고 있지 않으면 빌드가 이 메시지로 죽는다.
+
+        error: No interpreter found for Python 3.11 in managed installations
+               or search path
+
+    Vercel은 이 파일을 "무시한다"고 경고만 남기고 자기 버전을 고르지만, 그 뒤에
+    실행되는 uv는 이 파일을 그대로 읽는다. 둘이 어긋나면 배포가 실패한다.
+    """
+    import pathlib
+    import re
+    import sys
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    pinned = root.joinpath('.python-version').read_text(encoding='utf-8').strip()
+    pyproject = root.joinpath('pyproject.toml').read_text(encoding='utf-8')
+
+    required = re.search(r'requires-python\s*=\s*"([^"]+)"', pyproject)
+    assert required, 'pyproject.toml에 requires-python이 없다'
+
+    lower_bound = re.search(r'>=\s*(\d+)\.(\d+)', required.group(1))
+    assert lower_bound, f'requires-python 형식을 읽을 수 없다: {required.group(1)}'
+
+    pinned_parts = tuple(int(part) for part in pinned.split('.')[:2])
+    minimum = (int(lower_bound.group(1)), int(lower_bound.group(2)))
+
+    assert pinned_parts >= minimum, (
+        f'.python-version({pinned})이 requires-python({required.group(1)})보다 낮다')
+
+    # 이 테스트를 돌리는 파이썬도 같은 조건을 만족해야 한다.
+    assert sys.version_info[:2] >= minimum
