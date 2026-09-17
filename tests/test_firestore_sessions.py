@@ -10,10 +10,11 @@
 고정하는 것은 읽고-고쳐-쓰는 로직과 문서 모양이다.
 """
 
-import config
 import pytest
 
+import config
 import sessions
+import store
 from app import create_app
 
 
@@ -393,7 +394,47 @@ def test_rate_limit_document_id_does_not_leak_student_name():
 def test_auto_picks_firestore_on_serverless(monkeypatch):
     monkeypatch.setattr(config, 'SESSION_BACKEND', 'auto')
     monkeypatch.setattr(config, 'SERVERLESS', True)
+    monkeypatch.setattr(store, 'firebase_credentials_available', lambda: True)
     assert sessions._resolve_backend() == 'firestore'
+
+
+def test_auto_does_not_pick_firestore_without_credentials(monkeypatch):
+    """서버리스 + 자격 증명 없음 → 앱이 **떠야** 한다.
+
+    firestore를 고르면 클라이언트를 만들다 임포트 중에 죽는다. 서버리스에서는
+    그게 배포 실패로만 보이고 원인을 알 수 없다. 메모리로 떠서 /health가 무엇이
+    잘못됐는지 말하게 하는 편이 낫다. (Vercel 첫 배포가 이것 때문에 실패했다.)
+    """
+    monkeypatch.setattr(config, 'SESSION_BACKEND', 'auto')
+    monkeypatch.setattr(config, 'SERVERLESS', True)
+    monkeypatch.setattr(store, 'firebase_credentials_available', lambda: False)
+    monkeypatch.setattr(sessions, '_serverless_without_credentials_warned', False)
+
+    assert sessions._resolve_backend() == 'memory'
+
+
+def test_app_boots_on_serverless_without_credentials(monkeypatch):
+    """임포트만으로 죽지 않는지 실제 앱으로 확인한다."""
+    monkeypatch.setattr(config, 'SESSION_BACKEND', 'auto')
+    monkeypatch.setattr(config, 'SERVERLESS', True)
+    monkeypatch.setattr(store, 'firebase_credentials_available', lambda: False)
+
+    app = create_app(record_store=store.LocalJsonStore(path='/dev/null'))
+    app.config.update(TESTING=True)
+
+    payload = app.test_client().get('/health').get_json()
+    assert payload['session_backend'] == 'memory'
+
+
+def test_firestore_client_failure_names_the_fix(monkeypatch):
+    """배포 로그에서 원인을 찾을 수 있어야 한다."""
+    def boom():
+        raise RuntimeError('Your default credentials were not found.')
+
+    monkeypatch.setattr(store, 'create_firestore_client', boom)
+
+    with pytest.raises(RuntimeError, match='FIREBASE_SERVICE_ACCOUNT_JSON'):
+        sessions._firestore_client()
 
 
 def test_auto_picks_memory_on_normal_server(monkeypatch):

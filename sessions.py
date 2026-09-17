@@ -25,6 +25,9 @@ import config
 
 logger = logging.getLogger(__name__)
 
+# 서버리스인데 자격 증명이 없다는 경고를 한 번만 남기기 위한 플래그.
+_serverless_without_credentials_warned = False
+
 
 @dataclass
 class TypingActivity:
@@ -253,6 +256,25 @@ def _firestore_transactional(func):
     return firestore.transactional(func)
 
 
+def _firestore_client():
+    """Firestore 클라이언트를 만든다. 실패하면 무엇을 고쳐야 하는지 말해 준다.
+
+    이 예외는 앱이 뜨기 전에 나므로, 서버리스에서는 배포 실패나 정체불명의 500으로만
+    보인다. 원래 메시지(`DefaultCredentialsError`)만으로는 배포 로그에서 원인을
+    찾기 어렵다.
+    """
+    import store
+
+    try:
+        return store.create_firestore_client()
+    except Exception as error:
+        raise RuntimeError(
+            'SESSION_BACKEND=firestore인데 Firestore에 연결할 수 없습니다. '
+            'FIREBASE_SERVICE_ACCOUNT_JSON(한 줄 JSON)이 설정되어 있는지 확인하세요. '
+            f'원인: {error}'
+        ) from error
+
+
 def _session_doc_id(session_id: str) -> str:
     """session_id를 Firestore 문서 ID로 바꾼다.
 
@@ -310,11 +332,7 @@ class FirestoreSessionRegistry:
         self._ttl = ttl_seconds if ttl_seconds is not None else config.SESSION_TTL_SECONDS
         self._collection_name = collection_name or config.FIRESTORE_SESSION_COLLECTION
         self._transactional = transactional or _firestore_transactional
-        if client is None:
-            import store
-
-            client = store.create_firestore_client()
-        self._client = client
+        self._client = client if client is not None else _firestore_client()
 
     def _doc(self, session_id: str):
         return (self._client.collection(self._collection_name)
@@ -419,11 +437,7 @@ class FirestoreRateLimiter:
                      else config.MAX_SUBMISSIONS_PER_WINDOW)
         self._collection_name = collection_name or config.FIRESTORE_RATE_LIMIT_COLLECTION
         self._transactional = transactional or _firestore_transactional
-        if client is None:
-            import store
-
-            client = store.create_firestore_client()
-        self._client = client
+        self._client = client if client is not None else _firestore_client()
 
     def allow(self, key: str) -> bool:
         doc_ref = (self._client.collection(self._collection_name)
@@ -457,8 +471,30 @@ def _resolve_backend() -> str:
     if backend != 'auto':
         logger.warning("알 수 없는 SESSION_BACKEND=%r → auto로 처리합니다.", backend)
 
+    if not config.SERVERLESS:
+        return 'memory'
+
     # 서버리스에서 memory를 쓰면 요청마다 프로세스가 달라져 연습 세션이 사라진다.
-    return 'firestore' if config.SERVERLESS else 'memory'
+    # 그렇다고 자격 증명 없이 firestore를 고르면 **앱이 아예 뜨지 않는다** —
+    # Firestore 클라이언트를 만들다 예외가 나고, 서버리스에서는 그게 배포 실패나
+    # 정체불명의 500으로만 보인다. 그보다는 뜨게 두고 /health가 무엇이 잘못됐는지
+    # 말하게 하는 편이 낫다.
+    import store
+
+    if store.firebase_credentials_available():
+        return 'firestore'
+
+    # 세션 보관소와 빈도 제한기가 각각 물어보므로 경고는 한 번만 남긴다.
+    global _serverless_without_credentials_warned
+    if not _serverless_without_credentials_warned:
+        _serverless_without_credentials_warned = True
+        logger.error(
+            "서버리스 환경인데 Firebase 자격 증명이 없어 연습 세션을 프로세스 메모리에 "
+            "둡니다. 인스턴스가 여러 개로 늘어나면 학생이 기록을 저장할 때 "
+            "'타이핑 세션을 찾을 수 없습니다' 오류가 납니다. "
+            "FIREBASE_SERVICE_ACCOUNT_JSON과 SESSION_BACKEND=firestore를 설정하세요."
+        )
+    return 'memory'
 
 
 def create_session_registry():
