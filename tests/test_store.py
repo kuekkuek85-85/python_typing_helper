@@ -190,3 +190,105 @@ def test_missing_credentials_and_bad_credentials_give_different_advice(monkeypat
 
     monkeypatch.setenv('FIREBASE_SERVICE_ACCOUNT_JSON', '{"type": "service_account"}')
     assert '한 줄 JSON인지' in store._credential_hint()
+
+
+# --- 등수와 검색 ---------------------------------------------------------
+def test_ranks_are_assigned_by_the_server(record_store):
+    _add(record_store, '10101 가나다', score=300)
+    _add(record_store, '10102 라마바', score=200)
+    _add(record_store, '10103 사아자', score=100)
+
+    assert [r['rank'] for r in record_store.top('자리')] == [1, 2, 3]
+
+
+def test_tied_records_share_a_rank_and_skip_the_next(record_store):
+    """2등이 둘이면 다음은 4등이다."""
+    _add(record_store, '10101 가나다', score=300, accuracy=90.0, wpm=100)
+    _add(record_store, '10102 라마바', score=200, accuracy=90.0, wpm=100, minutes_ago=10)
+    _add(record_store, '10103 사아자', score=200, accuracy=90.0, wpm=100, minutes_ago=5)
+    _add(record_store, '10104 차카타', score=100, accuracy=90.0, wpm=100)
+
+    assert [r['rank'] for r in record_store.top('자리')] == [1, 2, 2, 4]
+
+
+def test_assign_ranks_does_not_mutate_the_cached_list(record_store):
+    """캐시된 목록에 rank를 박아 넣으면 다른 조회가 오염된다."""
+    _add(record_store, '10101 가나다', score=300)
+
+    cached = record_store.records_for_mode('자리')
+    record_store.top('자리')
+
+    assert 'rank' not in cached[0]
+
+
+def test_search_matches_name_and_student_number(record_store):
+    _add(record_store, '10218 홍길동', score=300)
+    _add(record_store, '10219 김철수', score=200)
+    _add(record_store, '20101 홍길순', score=100)
+
+    by_name, total = record_store.search('자리', '홍길동', limit=10)
+    assert [r['student_id'] for r in by_name] == ['10218 홍길동']
+    assert total == 1
+
+    by_number, _ = record_store.search('자리', '10219', limit=10)
+    assert [r['student_id'] for r in by_number] == ['10219 김철수']
+
+
+def test_search_by_class_prefix_finds_the_whole_class(record_store):
+    """'102'로 찾으면 1학년 2반이 한 번에 나온다."""
+    _add(record_store, '10201 가나다', score=300)
+    _add(record_store, '10202 라마바', score=200)
+    _add(record_store, '20301 사아자', score=100)
+
+    matched, total = record_store.search('자리', '102', limit=10)
+
+    assert total == 2
+    assert {r['student_id'] for r in matched} == {'10201 가나다', '10202 라마바'}
+
+
+def test_search_keeps_the_overall_rank(record_store):
+    """검색 결과 안의 순번이 아니라 전체에서 몇 등인지를 보여줘야 한다."""
+    for index in range(6):
+        _add(record_store, f'1010{index} 학생{index}', score=600 - index * 100)
+    _add(record_store, '10218 홍길동', score=50)   # 전체 7등
+
+    matched, _ = record_store.search('자리', '홍길동', limit=10)
+
+    assert len(matched) == 1
+    assert matched[0]['rank'] == 7, '검색 결과 1번째가 아니라 전체 7등이어야 한다'
+
+
+def test_search_ignores_case_and_extra_spaces(record_store):
+    _add(record_store, '10218 홍길동', score=300)
+
+    for query in ('10218  홍길동', '  홍길동  '):
+        matched, _ = record_store.search('자리', query, limit=10)
+        assert len(matched) == 1, f'{query!r} 로 찾지 못했다'
+
+
+def test_search_is_scoped_to_the_mode(record_store):
+    _add(record_store, '10218 홍길동', mode='자리', score=300)
+    _add(record_store, '10218 홍길동', mode='낱말', score=200)
+
+    matched, total = record_store.search('자리', '홍길동', limit=10)
+    assert total == 1
+    assert matched[0]['mode'] == '자리'
+
+
+def test_search_without_matches_returns_nothing(record_store):
+    _add(record_store, '10218 홍길동', score=300)
+
+    matched, total = record_store.search('자리', '없는이름', limit=10)
+    assert matched == [] and total == 0
+
+
+def test_search_paginates(record_store):
+    for index in range(5):
+        _add(record_store, f'1020{index} 홍길동', score=500 - index)
+
+    first, total = record_store.search('자리', '홍길동', limit=2, offset=0)
+    second, _ = record_store.search('자리', '홍길동', limit=2, offset=2)
+
+    assert total == 5
+    assert len(first) == 2 and len(second) == 2
+    assert not {r['id'] for r in first} & {r['id'] for r in second}

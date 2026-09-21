@@ -432,8 +432,19 @@ def _register_routes(app: Flask) -> None:
         limit = max(1, min(limit, config.MAX_PAGE_SIZE))
         offset = max(0, offset)
 
+        # 검색어가 있으면 학번·이름 부분 일치로 거른다. 기록에 들어가는 등수는
+        # 검색 결과 안의 순번이 아니라 **전체 순위 기준**이다(store.assign_ranks).
+        search = (request.args.get('search') or '').strip()
+        if search and len(search) < config.SEARCH_MIN_LENGTH:
+            return jsonify({
+                'error': f'검색어는 {config.SEARCH_MIN_LENGTH}글자 이상 입력해주세요.'
+            }), 400
+
         try:
-            records, total = _store().page(mode, limit, offset)
+            if search:
+                records, total = _store().search(mode, search, limit, offset)
+            else:
+                records, total = _store().page(mode, limit, offset)
         except Exception as error:  # noqa: BLE001
             logger.exception('기록 조회 실패: %s', error)
             return jsonify({'error': '기록을 불러오지 못했습니다.'}), 503
@@ -441,6 +452,7 @@ def _register_routes(app: Flask) -> None:
         return jsonify({
             'success': True,
             'mode': mode,
+            'search': search or None,
             'records': [store_module.to_api_dict(record) for record in records],
             'pagination': {
                 'limit': limit,

@@ -54,6 +54,9 @@ def to_api_dict(record: dict) -> dict:
         'score': record.get('score'),
         'duration_sec': record.get('duration_sec'),
         'created_at': created_at.astimezone(KST).isoformat() if created_at else None,
+        # 등수는 서버가 정한다(store.assign_ranks). 검색으로 일부만 보여줄 때도
+        # 전체 기준 등수가 그대로 나와야 한다.
+        'rank': record.get('rank'),
     }
 
 
@@ -72,6 +75,37 @@ def _sort_key(record: dict):
     created_at = record.get('created_at') or datetime.max.replace(tzinfo=timezone.utc)
     return (-record.get('score', 0), -record.get('accuracy', 0.0),
             -record.get('wpm', 0), created_at)
+
+
+def normalize_search(text) -> str:
+    """검색 비교용으로 다듬는다. 연속 공백을 하나로 줄이고 대소문자를 없앤다."""
+    return ' '.join(str(text or '').split()).casefold()
+
+
+def _tie_key(record: dict):
+    """같은 등수로 볼 기준. 점수·정확도·타수가 모두 같으면 동점이다."""
+    return (record.get('score'), record.get('accuracy'), record.get('wpm'))
+
+
+def assign_ranks(records: list[dict]) -> list[dict]:
+    """정렬된 목록에 등수를 매긴 **새 목록**을 돌려준다.
+
+    동점이면 같은 등수를 주고, 다음 등수는 인원 수만큼 건너뛴다(2등이 둘이면
+    다음은 4등).
+
+    **등수는 서버가 정한다.** 예전에는 `leaderboard.js`가 화면에 뿌릴 목록에서
+    위치로 계산했다. 그러면 검색으로 걸러낸 목록에서 "홍길동 1등"처럼 실제와 다른
+    등수가 나온다. 선생님이 알고 싶은 것은 전체에서 몇 등인지다.
+
+    캐시된 목록을 건드리면 안 되므로 원본을 고치지 않고 새 dict를 만든다.
+    """
+    ranked: list[dict] = []
+    rank = 1
+    for index, record in enumerate(records):
+        if index > 0 and _tie_key(record) != _tie_key(records[index - 1]):
+            rank = index + 1
+        ranked.append({**record, 'rank': rank})
+    return ranked
 
 
 class RecordStore:
@@ -134,11 +168,35 @@ class RecordStore:
         return len(self.records_for_mode(mode))
 
     def top(self, mode: str, limit: int = 10) -> list[dict]:
-        return self.records_for_mode(mode)[:limit]
+        return assign_ranks(self.records_for_mode(mode))[:limit]
 
     def page(self, mode: str, limit: int, offset: int) -> tuple[list[dict], int]:
-        records = self.records_for_mode(mode)
+        records = assign_ranks(self.records_for_mode(mode))
         return records[offset:offset + limit], len(records)
+
+    def search(self, mode: str, query: str, limit: int,
+               offset: int = 0) -> tuple[list[dict], int]:
+        """학번·이름 부분 일치 검색. (일치한 기록, 전체 일치 수)를 돌려준다.
+
+        학번은 `"10218 홍길동"` 한 덩어리라 부분 일치 하나로 학번과 이름을 모두
+        찾을 수 있다. `"102"`로 찾으면 1학년 2반이 한 번에 나온다.
+
+        돌려주는 기록의 `rank`는 **전체 순위 기준 등수**다. 검색 결과 안에서의
+        순번이 아니다.
+
+        ⚠️ **Firestore에는 부분 일치 쿼리가 없다.** 그래서 이 경로는 모드별 기록을
+        전부 읽어 파이썬에서 거른다. `records_for_mode`의 캐시를 그대로 쓰므로
+        연달아 검색해도 추가 읽기는 없지만, 캐시가 비어 있으면 그 모드의 문서를
+        모두 읽는다. 한 학급~한 학년 규모에서는 문제가 없다. 학교 전체 몇 년치가
+        쌓이면 저장 시 색인 문서를 만드는 방식으로 다시 설계해야 한다.
+        """
+        needle = normalize_search(query)
+        if not needle:
+            return [], 0
+
+        matched = [record for record in assign_ranks(self.records_for_mode(mode))
+                   if needle in normalize_search(record.get('student_id'))]
+        return matched[offset:offset + limit], len(matched)
 
     def invalidate(self, mode: str | None = None) -> None:
         """캐시를 비운다. 모드별 파생 캐시(head/count)도 함께 지운다."""
@@ -240,8 +298,9 @@ class FirestoreStore(RecordStore):
     def top(self, mode: str, limit: int = 10) -> list[dict]:
         head = self._fetch_head(mode, limit)
         if head is not None:
-            return head[:limit]
-        return self.records_for_mode(mode)[:limit]
+            # head는 1등부터 시작하므로 여기서 매긴 등수가 전체 기준과 같다.
+            return assign_ranks(head)[:limit]
+        return super().top(mode, limit)
 
     def page(self, mode: str, limit: int, offset: int) -> tuple[list[dict], int]:
         total = self.count_for_mode(mode)
@@ -251,9 +310,9 @@ class FirestoreStore(RecordStore):
         if needed <= HEAD_FETCH_MAX:
             head = self._fetch_head(mode, needed)
             if head is not None:
-                return head[offset:needed], total
+                return assign_ranks(head)[offset:needed], total
 
-        records = self.records_for_mode(mode)
+        records = assign_ranks(self.records_for_mode(mode))
         return records[offset:offset + limit], total
 
     def _fetch_head(self, mode: str, needed: int) -> list[dict] | None:

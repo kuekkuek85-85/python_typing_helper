@@ -1,13 +1,16 @@
 /**
  * 홈화면 명예의 전당.
  *
- * 서버가 이미 (점수 → 정확도 → 타수 → 기록순)으로 정렬해서 보내준다.
- * 여기서는 동점자 등수 계산과 표 렌더링만 담당한다.
+ * 서버가 정렬과 **등수까지** 정해서 보내준다(store.assign_ranks).
+ * 여기서 위치로 등수를 계산하면 검색으로 걸러낸 목록에서 "홍길동 1등"처럼
+ * 실제와 다른 등수가 나온다. record.rank를 그대로 쓴다.
  */
 (function () {
     'use strict';
 
-    var ALL_VIEW_LIMIT = 2000; // 서버 MAX_PAGE_SIZE와 동일
+    var ALL_VIEW_LIMIT = 2000;      // 서버 MAX_PAGE_SIZE와 동일
+    var SEARCH_MIN_LENGTH = 2;      // 서버 config.SEARCH_MIN_LENGTH와 동일
+    var SEARCH_DEBOUNCE_MS = 300;
 
     function Leaderboard() {
         this.modes = [];
@@ -17,6 +20,8 @@
 
         this.currentMode = this.modes[0] || '자리';
         this.viewMode = 'top10'; // 'top10' | 'all'
+        this.search = '';
+        this.searchTimer = null;
     }
 
     Leaderboard.prototype.init = function () {
@@ -46,6 +51,57 @@
                 self.loadModeData(self.currentMode);
             });
         }
+
+        var searchInput = document.getElementById('recordSearch');
+        if (searchInput) {
+            searchInput.addEventListener('input', function () {
+                // 한 글자 칠 때마다 요청하면 Firestore를 그만큼 읽는다. 입력이
+                // 멎은 뒤에만 보낸다.
+                window.clearTimeout(self.searchTimer);
+                self.searchTimer = window.setTimeout(function () {
+                    self.applySearch(searchInput.value);
+                }, SEARCH_DEBOUNCE_MS);
+            });
+        }
+
+        var clearButton = document.getElementById('searchClearBtn');
+        if (clearButton) {
+            clearButton.addEventListener('click', function () {
+                if (searchInput) searchInput.value = '';
+                window.clearTimeout(self.searchTimer);
+                self.applySearch('');
+                if (searchInput) searchInput.focus();
+            });
+        }
+    };
+
+    /** 검색어를 확정하고 목록을 다시 불러온다. */
+    Leaderboard.prototype.applySearch = function (raw) {
+        var value = (raw || '').trim();
+
+        // 최소 길이 미만은 검색으로 치지 않는다(서버도 같은 기준으로 거절한다).
+        var next = value.length >= SEARCH_MIN_LENGTH ? value : '';
+        var changed = next !== this.search;
+
+        this.search = next;
+        this.updateSearchUi(value);
+
+        if (changed) this.loadModeData(this.currentMode);
+    };
+
+    Leaderboard.prototype.updateSearchUi = function (typed) {
+        var clearButton = document.getElementById('searchClearBtn');
+        if (clearButton) clearButton.style.display = typed ? '' : 'none';
+
+        var status = document.getElementById('searchStatus');
+        if (!status) return;
+
+        if (typed && typed.length < SEARCH_MIN_LENGTH) {
+            status.textContent = SEARCH_MIN_LENGTH + '글자 이상 입력하면 검색합니다.';
+        } else if (!this.search) {
+            status.textContent = '';
+        }
+        // 검색 결과 건수는 응답을 받은 뒤 loadModeData가 채운다.
     };
 
     /** 탭 옆 배지에 모드별 전체 기록 수를 채운다. */
@@ -70,10 +126,20 @@
             return;
         }
 
-        var isAllView = this.viewMode === 'all';
-        var url = isAllView
-            ? '/api/records?mode=' + encodeURIComponent(mode) + '&limit=' + ALL_VIEW_LIMIT + '&offset=0'
-            : '/api/records/top?mode=' + encodeURIComponent(mode);
+        var isSearching = !!this.search;
+        // 검색 중에는 Top10만 봐서는 찾는 학생이 안 나오므로 전체에서 찾는다.
+        var isAllView = this.viewMode === 'all' || isSearching;
+        var url;
+        if (isSearching) {
+            url = '/api/records?mode=' + encodeURIComponent(mode) +
+                  '&limit=' + ALL_VIEW_LIMIT + '&offset=0' +
+                  '&search=' + encodeURIComponent(this.search);
+        } else if (isAllView) {
+            url = '/api/records?mode=' + encodeURIComponent(mode) +
+                  '&limit=' + ALL_VIEW_LIMIT + '&offset=0';
+        } else {
+            url = '/api/records/top?mode=' + encodeURIComponent(mode);
+        }
 
         view.loading.style.display = 'block';
         view.content.style.display = 'none';
@@ -86,14 +152,22 @@
             .then(function (data) {
                 var records = Array.isArray(data.records) ? data.records : [];
 
-                if (view.count) {
-                    view.count.textContent = data.pagination ? data.pagination.total : records.length;
+                // 탭 배지는 그 모드의 **전체** 기록 수다.
+                //  - 검색 결과 수로 덮어쓰면 검색을 지운 뒤에도 줄어든 숫자가 남는다.
+                //  - Top10 응답에는 pagination이 없다. 목록 길이(최대 10)로 덮어쓰면
+                //    기록이 12건이어도 배지가 10으로 굳는다.
+                if (view.count && !isSearching && data.pagination) {
+                    view.count.textContent = data.pagination.total;
+                }
+                if (isSearching) {
+                    self.showSearchCount(data.pagination ? data.pagination.total : records.length);
                 }
 
                 view.loading.style.display = 'none';
 
                 if (records.length === 0) {
                     view.empty.style.display = 'block';
+                    self.describeEmptyState(view, isSearching);
                     return;
                 }
 
@@ -143,23 +217,43 @@
 
     Leaderboard.prototype.renderRecords = function (tbody, records) {
         var fragment = document.createDocumentFragment();
-        var currentRank = 1;
 
         records.forEach(function (record, index) {
-            if (index > 0) {
-                var previous = records[index - 1];
-                // 점수·정확도·타수가 모두 같으면 같은 등수(다음 등수는 인원 수만큼 건너뛴다).
-                if (record.score !== previous.score ||
-                    record.accuracy !== previous.accuracy ||
-                    record.wpm !== previous.wpm) {
-                    currentRank = index + 1;
-                }
-            }
-            fragment.appendChild(createRecordRow(record, currentRank));
+            // 등수는 서버가 정한다. 검색으로 걸러낸 목록에서도 전체 기준 등수가
+            // 그대로 와야 하므로 여기서 위치로 다시 계산하지 않는다.
+            var rank = typeof record.rank === 'number' ? record.rank : index + 1;
+            fragment.appendChild(createRecordRow(record, rank));
         });
 
         tbody.innerHTML = '';
         tbody.appendChild(fragment);
+    };
+
+    /** 검색 결과 건수를 검색창 아래에 적는다. */
+    Leaderboard.prototype.showSearchCount = function (total) {
+        var status = document.getElementById('searchStatus');
+        if (!status) return;
+        status.textContent = total > 0
+            ? '\'' + this.search + '\' 검색 결과 ' + total + '건 (등수는 전체 기준)'
+            : '\'' + this.search + '\'와 일치하는 기록이 없습니다.';
+    };
+
+    /** 결과가 없을 때 안내 문구를 상황에 맞게 바꾼다. */
+    Leaderboard.prototype.describeEmptyState = function (view, isSearching) {
+        var title = view.empty.querySelector('h5');
+        var description = view.empty.querySelector('p');
+        var startLink = view.empty.querySelector('a');
+
+        if (isSearching) {
+            if (title) title.textContent = '검색 결과가 없습니다';
+            if (description) {
+                description.textContent = '학번 또는 이름의 일부를 입력해보세요. (예: 10218, 홍길동, 102)';
+            }
+            if (startLink) startLink.style.display = 'none';
+        } else {
+            if (title) title.textContent = '아직 기록이 없습니다';
+            if (startLink) startLink.style.display = '';
+        }
     };
 
     Leaderboard.prototype.updateToggleButton = function () {

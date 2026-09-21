@@ -118,3 +118,8 @@ SESSION_COOKIE_SECURE = _env_bool("SESSION_COOKIE_SECURE", False)
 
 # 목록 API가 한 번에 돌려줄 수 있는 최대 개수.
 MAX_PAGE_SIZE = _env_int("MAX_PAGE_SIZE", 2000)
+
+# 명예의 전당 검색에 필요한 최소 글자 수.
+# 한 글자로 찾으면 거의 모든 기록이 걸려 의미가 없고, Firestore 부분 일치는
+# 모드별 전체 읽기라 비용만 든다(store.RecordStore.search 참고).
+SEARCH_MIN_LENGTH = _env_int("SEARCH_MIN_LENGTH", 2)
