@@ -106,7 +106,23 @@
                                     <i class="bi bi-list"></i> 전체 보기
                                 </button>
                             </div>
-                            
+
+                            <!-- 학번·이름 검색 -->
+                            <div class="mb-3">
+                                <label for="recordSearch" class="visually-hidden">학번 또는 이름으로 검색</label>
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                    <input type="search" class="form-control" id="recordSearch"
+                                           placeholder="학번 또는 이름으로 검색 (예: 10218, 홍길동, 102)"
+                                           autocomplete="off" maxlength="30">
+                                    <button type="button" class="btn btn-outline-secondary" id="searchClearBtn"
+                                            style="display: none;">
+                                        <i class="bi bi-x-lg"></i> 지우기
+                                    </button>
+                                </div>
+                                <div class="form-text" id="searchStatus"></div>
+                            </div>
+
                             <!-- 모드 선택 탭 -->
                             <ul class="nav nav-tabs card-header-tabs" id="modeTab" role="tablist">
                                 {% for mode_key, mode_data in modes.items() %}

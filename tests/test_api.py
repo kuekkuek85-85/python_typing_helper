@@ -410,3 +410,78 @@ def test_closed_modes_show_the_coming_soon_button(client):
 def test_closed_modes_still_work_by_direct_url(client):
     """홈 화면에서 가렸을 뿐 기능을 없앤 것은 아니다(문장/문단과 같은 취급)."""
     assert client.get('/practice/낱말').status_code == 200
+
+
+# --- 명예의 전당 검색 ------------------------------------------------------
+def _save_record(client, app, record_store, student_id, score, mode='자리'):
+    """검증을 거치지 않고 저장소에 바로 넣는다(검색 테스트용)."""
+    from datetime import datetime, timedelta, timezone
+
+    return record_store.add(
+        student_id=student_id, mode=mode, wpm=score // 100, accuracy=95.0,
+        score=score, duration_sec=config.PRACTICE_SECONDS,
+        created_at=datetime.now(timezone.utc) - timedelta(minutes=score))
+
+
+def test_search_api_filters_by_student_id(client, app, record_store):
+    _save_record(client, app, record_store, '10218 홍길동', 500)
+    _save_record(client, app, record_store, '10219 김철수', 400)
+
+    payload = client.get('/api/records?mode=자리&search=홍길동').get_json()
+
+    assert payload['success'] is True
+    assert payload['search'] == '홍길동'
+    assert [r['student_id'] for r in payload['records']] == ['10218 홍길동']
+    assert payload['pagination']['total'] == 1
+
+
+def test_search_api_returns_the_overall_rank(client, app, record_store):
+    for index in range(4):
+        _save_record(client, app, record_store, f'1010{index} 학생{index}', 900 - index * 100)
+    _save_record(client, app, record_store, '10218 홍길동', 100)
+
+    payload = client.get('/api/records?mode=자리&search=홍길동').get_json()
+
+    assert payload['records'][0]['rank'] == 5
+
+
+def test_list_api_includes_rank_without_search(client, app, record_store):
+    _save_record(client, app, record_store, '10101 가나다', 300)
+    _save_record(client, app, record_store, '10102 라마바', 200)
+
+    payload = client.get('/api/records?mode=자리').get_json()
+    assert [r['rank'] for r in payload['records']] == [1, 2]
+
+    top = client.get('/api/records/top?mode=자리').get_json()
+    assert [r['rank'] for r in top['records']] == [1, 2]
+
+
+def test_search_shorter_than_minimum_is_rejected(client):
+    response = client.get('/api/records?mode=자리&search=홍')
+
+    assert response.status_code == 400
+    assert str(config.SEARCH_MIN_LENGTH) in response.get_json()['error']
+
+
+def test_blank_search_falls_back_to_the_normal_list(client, app, record_store):
+    _save_record(client, app, record_store, '10218 홍길동', 500)
+
+    payload = client.get('/api/records?mode=자리&search=   ').get_json()
+
+    assert payload['search'] is None
+    assert payload['pagination']['total'] == 1
+
+
+def test_search_with_no_match_returns_empty_list(client, app, record_store):
+    _save_record(client, app, record_store, '10218 홍길동', 500)
+
+    payload = client.get('/api/records?mode=자리&search=없는이름').get_json()
+
+    assert payload['records'] == []
+    assert payload['pagination']['total'] == 0
+
+
+def test_search_page_has_the_search_box(client):
+    page = client.get('/').get_data(as_text=True)
+    assert 'id="recordSearch"' in page
+    assert '학번 또는 이름으로 검색' in page
