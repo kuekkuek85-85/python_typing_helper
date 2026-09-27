@@ -79,7 +79,8 @@
     background: var(--bs-gray-800);
     color: var(--bs-body-color);
     opacity: 0.5;
-    transition: all 0.15s ease;
+    /* 타일이 커지고 줄어들 때 애니메이션(전환)을 쓰지 않는다.
+       입력할 때마다 타일이 흔들려 보이는 걸 막기 위해 즉시 바뀌게 둔다. */
 }
 
 /* 지금 입력할 글자: 크게 확대해 강조한다. */
