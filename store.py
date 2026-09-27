@@ -35,6 +35,9 @@ RECORD_FIELDS = ('student_id', 'mode', 'wpm', 'accuracy', 'score', 'duration_sec
 # 어차피 대부분을 읽어야 하므로 모드별 전체 읽기가 낫다.
 HEAD_FETCH_MAX = 200
 
+# 교사 대시보드 설정·예제 백업을 담는 Firestore 컬렉션(학생 기록과 분리).
+CONFIG_COLLECTION = 'app_config'
+
 
 
 def now_utc() -> datetime:
@@ -134,6 +137,15 @@ class RecordStore:
         raise NotImplementedError
 
     def _fetch_mode(self, mode: str) -> list[dict]:
+        raise NotImplementedError
+
+    # --- 설정 문서(key-value) ---------------------------------------------
+    # 교사 대시보드의 모드 on/off, 활성 예제 목록, 예제 백업을 저장한다.
+    # 학생 기록(records)과 달리 개수가 적고 통째로 읽고 쓴다.
+    def read_config(self, key: str) -> dict | None:
+        raise NotImplementedError
+
+    def write_config(self, key: str, value: dict) -> None:
         raise NotImplementedError
 
     # --- 공통 API ---------------------------------------------------------
@@ -356,6 +368,18 @@ class FirestoreStore(RecordStore):
         self._store_cache(cache_key, records, mode=mode, generation=generation)
         return records
 
+    # --- 설정 문서 --------------------------------------------------------
+    def read_config(self, key: str) -> dict | None:
+        try:
+            snapshot = self._client.collection(CONFIG_COLLECTION).document(key).get()
+        except Exception as error:  # noqa: BLE001 - 설정 읽기 실패는 기본값으로 넘어간다
+            logger.warning("설정 문서를 읽지 못했습니다(%s): %s", key, error)
+            return None
+        return snapshot.to_dict() if getattr(snapshot, 'exists', False) else None
+
+    def write_config(self, key: str, value: dict) -> None:
+        self._client.collection(CONFIG_COLLECTION).document(key).set(value)
+
     @staticmethod
     def _document_to_record(doc) -> dict:
         data = doc.to_dict() or {}
@@ -456,17 +480,29 @@ class LocalJsonStore(RecordStore):
             })
         return records
 
+    def read_config(self, key: str) -> dict | None:
+        with self._lock:
+            data = self._read()
+        return (data.get('config') or {}).get(key)
+
+    def write_config(self, key: str, value: dict) -> None:
+        with self._lock:
+            data = self._read()
+            data.setdefault('config', {})[key] = value
+            self._write(data)
+
     def _read(self) -> dict:
         if not os.path.exists(self._path):
-            return {'next_id': 1, 'records': []}
+            return {'next_id': 1, 'records': [], 'config': {}}
         try:
             with open(self._path, 'r', encoding='utf-8') as handle:
                 data = json.load(handle)
         except (json.JSONDecodeError, OSError) as error:
             logger.error("로컬 저장소 파일이 손상되었습니다(%s): %s", self._path, error)
-            return {'next_id': 1, 'records': []}
+            return {'next_id': 1, 'records': [], 'config': {}}
         data.setdefault('records', [])
         data.setdefault('next_id', len(data['records']) + 1)
+        data.setdefault('config', {})
         return data
 
     def _write(self, data: dict) -> None:
@@ -595,6 +631,14 @@ class UnavailableStore(RecordStore):
         return False
 
     def _fetch_mode(self, mode: str) -> list[dict]:
+        raise RuntimeError(self.reason)
+
+    def read_config(self, key: str) -> dict | None:
+        # 설정을 못 읽으면 기본값으로 동작하게 둔다(앱이 뜨는 게 우선).
+        return None
+
+    def write_config(self, key: str, value: dict) -> None:
+        # 저장할 수 없는 상태다. 교사에게 이유를 그대로 알린다.
         raise RuntimeError(self.reason)
 
     def _persist(self, record: dict) -> dict:

@@ -13,9 +13,10 @@ import secrets
 from datetime import timedelta
 from urllib.parse import unquote_to_bytes
 
-from flask import Flask, jsonify, render_template, request, session
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+import catalog
 import config
 import content
 import scoring
@@ -208,13 +209,28 @@ def _json_body() -> dict:
     return body if isinstance(body, dict) else {}
 
 
+def _teacher_authed() -> bool:
+    return session.get('teacher') is True
+
+
+def _require_teacher() -> tuple | None:
+    """교사 인증이 없으면 401 응답을 돌려준다(있으면 None)."""
+    if _teacher_authed():
+        return None
+    return jsonify({'error': '교사 로그인이 필요합니다.'}), 401
+
+
 # --- 라우트 --------------------------------------------------------------
 def _register_routes(app: Flask) -> None:
 
     @app.route('/')
     def index():
-        """홈페이지 - 연습 모드 선택과 명예의 전당(순위표는 JS가 API로 채운다)."""
-        return render_template('index.html', modes=content.PRACTICE_MODES)
+        """홈페이지 - 연습 모드 선택과 명예의 전당(순위표는 JS가 API로 채운다).
+
+        어떤 모드를 열지는 교사 대시보드에서 바꿀 수 있으므로, 코드의 기본값이
+        아니라 현재 설정(catalog.effective_modes)을 넘긴다.
+        """
+        return render_template('index.html', modes=catalog.effective_modes(_store()))
 
     @app.route('/practice/<mode>')
     def practice(mode):
@@ -474,8 +490,14 @@ def _register_routes(app: Flask) -> None:
         if mode not in content.PRACTICE_MODES:
             return jsonify({'error': '올바르지 않은 연습 모드입니다.'}), 400
 
+        # 자리 연습은 교사가 고른 활성 예제 목록을 쓴다(catalog). 다른 모드는
+        # jari_lines를 무시한다.
         try:
-            text = content.build_practice_text(mode, exclude=session.get('last_practice_text'))
+            text = content.build_practice_text(
+                mode,
+                exclude=session.get('last_practice_text'),
+                jari_lines=catalog.active_example_lines(_store()) if mode == '자리' else None,
+            )
         except KeyError:
             return jsonify({'error': '연습 텍스트를 찾을 수 없습니다.'}), 404
 
@@ -485,18 +507,92 @@ def _register_routes(app: Flask) -> None:
         response.headers['Cache-Control'] = 'no-store'
         return response
 
+    # --- 교사 대시보드 ----------------------------------------------------
+    @app.route('/teacher')
+    def teacher_dashboard():
+        """교사 대시보드. 로그인 전이면 로그인 화면을 보여준다."""
+        if not _teacher_authed():
+            return render_template('teacher_login.html')
+
+        store = _store()
+        # 「터틀 타이핑 예제」백업이 DB에 없으면 이때 한 번 만든다(있으면 그대로 둔다).
+        # 인증된 교사가 여는 드문 경로라 상시 요청 경로에 부담을 주지 않는다.
+        catalog.ensure_backup(store)
+        settings = catalog.get_settings(store)
+        return render_template(
+            'teacher.html',
+            modes=content.PRACTICE_MODES,
+            mode_state=settings['modes'],
+            example_sets=catalog.example_set_choices(),
+            active_example_set=settings['active_example_set'],
+            backend=store.backend,
+        )
+
+    @app.route('/teacher/login', methods=['POST'])
+    def teacher_login():
+        password = (request.form.get('password') or '')
+        # 한글 비밀번호도 비교할 수 있도록 bytes로 비교한다(compare_digest는 str에서
+        # 비ASCII를 허용하지 않는다).
+        if secrets.compare_digest(password.encode('utf-8'),
+                                  config.TEACHER_PASSWORD.encode('utf-8')):
+            session['teacher'] = True
+            return redirect(url_for('teacher_dashboard'))
+        return render_template('teacher_login.html', error='비밀번호가 올바르지 않습니다.'), 401
+
+    @app.route('/teacher/logout', methods=['POST'])
+    def teacher_logout():
+        session.pop('teacher', None)
+        return redirect(url_for('teacher_dashboard'))
+
+    @app.route('/api/teacher/modes', methods=['POST'])
+    def teacher_set_mode():
+        error = _require_teacher()
+        if error:
+            return error
+
+        payload = _json_body()
+        mode = payload.get('mode')
+        available = payload.get('available')
+        if mode not in content.PRACTICE_MODES or not isinstance(available, bool):
+            return jsonify({'error': '요청 형식이 올바르지 않습니다.'}), 400
+
+        try:
+            settings = catalog.set_mode_available(_store(), mode, available)
+        except Exception as error:  # noqa: BLE001 - 저장소 문제는 사용자에게 알린다
+            logger.exception('모드 설정 저장 실패: %s', error)
+            return jsonify({'error': '설정을 저장하지 못했습니다. 잠시 후 다시 시도해주세요.'}), 503
+
+        return jsonify({'success': True, 'modes': settings['modes']})
+
+    @app.route('/api/teacher/example-set', methods=['POST'])
+    def teacher_set_example():
+        error = _require_teacher()
+        if error:
+            return error
+
+        set_id = _json_body().get('id')
+        try:
+            settings = catalog.set_active_example_set(_store(), set_id)
+        except ValueError:
+            return jsonify({'error': '알 수 없는 예제 목록입니다.'}), 400
+        except Exception as error:  # noqa: BLE001
+            logger.exception('예제 목록 설정 저장 실패: %s', error)
+            return jsonify({'error': '설정을 저장하지 못했습니다. 잠시 후 다시 시도해주세요.'}), 503
+
+        return jsonify({'success': True, 'active_example_set': settings['active_example_set']})
+
     @app.errorhandler(404)
     def handle_not_found(error):
         if request.path.startswith('/api/'):
             return jsonify({'error': '요청한 API를 찾을 수 없습니다.'}), 404
-        return render_template('index.html', modes=content.PRACTICE_MODES), 404
+        return render_template('index.html', modes=catalog.effective_modes(_store())), 404
 
     @app.errorhandler(500)
     def handle_server_error(error):
         logger.exception('처리되지 않은 서버 오류: %s', error)
         if request.path.startswith('/api/'):
             return jsonify({'error': '서버 오류가 발생했습니다.'}), 500
-        return render_template('index.html', modes=content.PRACTICE_MODES), 500
+        return render_template('index.html', modes=catalog.effective_modes(_store())), 500
 
 
 app = create_app()

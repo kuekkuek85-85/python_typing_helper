@@ -25,13 +25,16 @@ STORE_BACKEND=local .venv/bin/python -m pytest -q
 | --- | --- |
 | `app.py` | Flask 앱 팩토리(`create_app`)와 모든 라우트 |
 | `config.py` | 환경 변수 기반 설정(연습 시간, 부정행위 방지 기준 등) |
-| `content.py` | 4개 연습 모드 정의와 연습 텍스트 생성 |
+| `content.py` | 4개 연습 모드 정의, 자리 예제 목록(터틀), 연습 텍스트 생성 |
+| `catalog.py` | 교사 대시보드 설정(모드 on/off·활성 예제 목록)과 예제 백업. DB 기반 |
 | `scoring.py` | 학번 검증, **점수 계산**, 기록 무결성 검증 |
 | `sessions.py` | 연습 세션 추적(키 입력 집계)과 제출 빈도 제한. 메모리 / Firestore 백엔드 |
 | `store.py` | 기록 저장소. Firestore 백엔드 + 로컬 JSON 백엔드 |
 | `main.py` | WSGI 엔트리 포인트 (`gunicorn main:app`). Vercel은 `app.py`의 `app`을 직접 찾는다 |
 | `static/js/app.js` | 연습 화면 로직(타이머, 하이라이트, 통계, 저장) |
 | `static/js/leaderboard.js` | 홈 화면 명예의 전당 |
+| `static/js/teacher.js` | 교사 대시보드(모드 토글·예제 목록 전환) |
+| `templates/teacher*.html` | 교사 대시보드·로그인 화면 |
 | `static/vendor/` | Bootstrap·Bootstrap Icons 사본 (CDN 차단 대비) |
 | `tests/` | pytest 테스트 |
 
@@ -194,10 +197,30 @@ Actions 탭에서 **수동 실행만** 되게 해 두었다. 지정 브랜치와
 학년 규모에서는 문제가 없고, 학교 전체 몇 년치가 쌓이면 저장 시 색인 문서를
 갱신하는 방식으로 다시 설계해야 한다.
 
+## 교사 대시보드 (`/teacher`)
+
+비밀번호는 `config.TEACHER_PASSWORD`(기본 `123456`, 환경 변수로 변경). 인증은
+세션 쿠키(`session['teacher']`)로 서명되어 서버리스에서도 상태가 필요 없다.
+
+할 수 있는 것:
+- **연습 모드 on/off** — 홈 화면에 무엇을 열지. 코드 기본값(`content.PRACTICE_MODES`
+  의 `available`) 위에 DB 설정이 덮어쓴다. **끈 모드도 주소로는 들어갈 수 있다**
+  (홈에서 가릴 뿐 접근 차단이 아니다).
+- **자리 연습 예제 목록 전환** — `content.EXAMPLE_SETS`의 목록 중 하나를 활성으로.
+
+설정은 **DB에 저장**한다(`catalog.py` → `store.read_config/write_config`). 서버리스는
+요청마다 프로세스가 다를 수 있어 메모리에 두면 교사가 바꾼 값이 안 퍼진다.
+프로세스별로 30초(TTL) 캐시하므로 교사 변경이 다른 인스턴스에 최대 30초 뒤 반영된다.
+
+### 자리 연습 예제 목록
+`content.EXAMPLE_SETS`가 코드 내장 목록(source of truth)이다. 목록을 추가하려면
+여기에 `id → {name, lines, source_markdown?}`를 더하면 대시보드 선택지에 나온다.
+자리 연습은 한 줄 표시(app.js가 공백을 하나로 합침)라 예제는 **한 줄짜리**여야 한다.
+「터틀 타이핑 예제」는 원본 마크다운을 줄 단위로 쪼개 중복을 없앤 것이며, 원본 md와
+생성한 줄을 DB(`app_config/example_backup_turtle`)에 백업해 둔다.
+
 ## 아직 구현되지 않은 것 (SRD 참고)
 
-- v0.9 교사 관리자 모드 (기록 수정/삭제) — 현재 '교사 로그인' 버튼은 안내만 표시
-- 낱말/문장/문단 모드는 API·로직은 동작하지만 홈 화면에서 '추후 제공'으로 막아둠.
-  **어떤 모드를 열지는 `content.PRACTICE_MODES`의 `available` 한 곳에서 정한다**
-  (`available: True`로 바꾸면 열린다). 주소를 직접 아는 사람은 여전히 들어갈 수
-  있으므로, 수업 중 학생이 새는 것을 막는 용도이지 접근 차단이 아니다.
+- v0.9 교사 관리자 모드의 **기록 수정/삭제**(현재 대시보드는 모드·예제만 관리)
+- 낱말/문장/문단 모드는 기본적으로 홈 화면에서 닫혀 있고(교사 대시보드에서 켠다),
+  API·연습 로직은 그대로 동작한다.
