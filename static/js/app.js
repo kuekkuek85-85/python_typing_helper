@@ -150,7 +150,6 @@
             userInput: document.getElementById('userInput'),
             startBtn: document.getElementById('startBtn'),
             resetBtn: document.getElementById('resetBtn'),
-            teacherLoginBtn: document.getElementById('teacherLoginBtn'),
             completeModal: document.getElementById('completeModal'),
             finalWpm: document.getElementById('finalWpm'),
             finalAccuracy: document.getElementById('finalAccuracy'),
@@ -200,12 +199,6 @@
 
         if (elements.saveRecordBtn) {
             elements.saveRecordBtn.addEventListener('click', saveRecord);
-        }
-
-        if (elements.teacherLoginBtn) {
-            elements.teacherLoginBtn.addEventListener('click', function () {
-                alert('교사 관리자 기능은 향후 버전에서 제공됩니다.');
-            });
         }
 
         setupVirtualKeyboard();
