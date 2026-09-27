@@ -240,10 +240,19 @@
     }
 
     function renderPracticeText() {
+        var isJari = window.currentMode === '자리';
         var fragment = document.createDocumentFragment();
         for (var i = 0; i < currentText.length; i++) {
             var span = document.createElement('span');
-            span.textContent = currentText[i];
+            var ch = currentText[i];
+            if (isJari && ch === ' ') {
+                // 타일 표시에서 공백은 빈 칸으로 보이지 않도록 눈에 보이는 기호를 쓴다.
+                // (data-space 속성은 updateTextHighlight의 className 초기화에도 남는다.)
+                span.textContent = '␣';
+                span.setAttribute('data-space', '1');
+            } else {
+                span.textContent = ch;
+            }
             span.setAttribute('data-index', i);
             fragment.appendChild(span);
         }
@@ -475,6 +484,22 @@
                 span.classList.add('current');
             }
         }
+
+        // 자리 연습은 지금 입력할 타일(확대된 글자)을 가운데로 스크롤한다.
+        if (window.currentMode === '자리') centerCurrentTile();
+    }
+
+    /** 자리 타일 표시에서 현재 글자 타일을 컨테이너 가운데로 가져온다. */
+    function centerCurrentTile() {
+        var container = elements.practiceText.parentElement; // .practice-text-container
+        var currentSpan = elements.practiceText.querySelector('span.current')
+            || elements.practiceText.querySelector('span[data-index]:last-child');
+        if (!container || !currentSpan) return;
+
+        var containerRect = container.getBoundingClientRect();
+        var spanRect = currentSpan.getBoundingClientRect();
+        var delta = (spanRect.left + spanRect.width / 2) - (containerRect.left + containerRect.width / 2);
+        container.scrollLeft += delta;
     }
 
     function countCorrectChars(typed, target) {

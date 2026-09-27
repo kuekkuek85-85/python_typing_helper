@@ -45,13 +45,80 @@
     display: block;
 }
 
-/* '자리' 연습은 한 줄로 길게 표시하고 가로 스크롤을 쓴다. */
-.practice-text.practice-text-single-line {
+/* '자리' 연습은 한 문자씩 큰 타일로 보여준다.
+   지금 입력할 글자를 크게 확대(.current)하고, 다음 글자들은 작은 타일로
+   오른쪽에 늘어놓는다. 가로로 넘치면 컨테이너가 스크롤한다(app.js가 현재
+   타일을 가운데로 스크롤). 손가락 그림자 같은 장식은 넣지 않는다. */
+.practice-text.practice-text-jari-tiles {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.5rem;
     white-space: nowrap;
-    height: 35px;
     width: max-content;
-    word-break: keep-all;
-    word-wrap: normal;
+    min-width: 100%;
+    height: auto;
+    min-height: 120px;
+    padding: 0.5rem 0.25rem;
+}
+
+.practice-text-jari-tiles span {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-width: 48px;
+    height: 60px;
+    padding: 0 0.4rem;
+    font-size: 1.8rem;
+    font-weight: 600;
+    line-height: 1;
+    border: 2px solid var(--bs-border-color);
+    border-radius: 0.5rem;
+    background: var(--bs-gray-800);
+    color: var(--bs-body-color);
+    opacity: 0.5;
+    transition: all 0.15s ease;
+}
+
+/* 지금 입력할 글자: 크게 확대해 강조한다. */
+.practice-text-jari-tiles span.current {
+    min-width: 110px;
+    height: 110px;
+    font-size: 4rem;
+    background-color: var(--bs-info);
+    color: var(--bs-white);
+    border-color: var(--bs-info);
+    box-shadow: 0 0 20px rgba(13, 202, 240, 0.5);
+    opacity: 1;
+    /* 확대 자체가 강조이므로 깜빡임(blink)은 쓰지 않는다. */
+    animation: none;
+}
+
+/* 이미 지나온 글자: 정타/오타 색으로 흐리게. */
+.practice-text-jari-tiles span.correct {
+    background-color: var(--bs-success);
+    color: var(--bs-white);
+    border-color: var(--bs-success);
+    opacity: 0.4;
+}
+
+.practice-text-jari-tiles span.incorrect {
+    background-color: var(--bs-danger);
+    color: var(--bs-white);
+    border-color: var(--bs-danger);
+    opacity: 0.7;
+}
+
+/* 공백 타일: 눈에 보이는 기호(␣)를 흐린 색으로. */
+.practice-text-jari-tiles span[data-space] {
+    color: var(--bs-secondary);
+    font-weight: 400;
+}
+
+.practice-text-jari-tiles span.current[data-space] {
+    color: var(--bs-white);
 }
 
 /* 텍스트 하이라이트 스타일 */
@@ -136,7 +203,20 @@
         font-size: 1rem;
         line-height: 1.6;
     }
-    
+
+    /* 자리 타일: 모바일에서는 조금 작게. */
+    .practice-text-jari-tiles span {
+        min-width: 38px;
+        height: 48px;
+        font-size: 1.4rem;
+    }
+
+    .practice-text-jari-tiles span.current {
+        min-width: 78px;
+        height: 78px;
+        font-size: 2.8rem;
+    }
+
     .practice-input {
         font-size: 1rem;
     }
