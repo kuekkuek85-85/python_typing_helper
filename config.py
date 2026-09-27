@@ -123,3 +123,9 @@ MAX_PAGE_SIZE = _env_int("MAX_PAGE_SIZE", 2000)
 # 한 글자로 찾으면 거의 모든 기록이 걸려 의미가 없고, Firestore 부분 일치는
 # 모드별 전체 읽기라 비용만 든다(store.RecordStore.search 참고).
 SEARCH_MIN_LENGTH = _env_int("SEARCH_MIN_LENGTH", 2)
+
+# --- 교사 대시보드 --------------------------------------------------------
+# /teacher 접속 비밀번호. 기본값은 수업용 간단 비번이며, 환경 변수로 바꿀 수 있다.
+# 학생 성적을 지우는 기능은 없지만 모드 on/off·예제 목록을 바꾸므로, 운영에서는
+# TEACHER_PASSWORD를 따로 설정하는 것을 권한다.
+TEACHER_PASSWORD = os.environ.get("TEACHER_PASSWORD", "123456")

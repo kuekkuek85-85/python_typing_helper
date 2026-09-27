@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>교사 대시보드 · 파이썬 타자 도우미</title>
+    <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.min.css') }}" rel="stylesheet">
+    <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <span class="navbar-brand"><i class="bi bi-mortarboard-fill"></i> 교사 대시보드</span>
+            <div class="d-flex gap-2">
+                <a href="{{ url_for('index') }}" class="btn btn-outline-light btn-sm">
+                    <i class="bi bi-house"></i> 홈
+                </a>
+                <form method="post" action="{{ url_for('teacher_logout') }}" class="m-0">
+                    <button type="submit" class="btn btn-outline-light btn-sm">
+                        <i class="bi bi-box-arrow-right"></i> 로그아웃
+                    </button>
+                </form>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container py-4" style="max-width: 720px;">
+        {% if backend != 'firestore' %}
+        <div class="alert alert-warning" role="alert">
+            <i class="bi bi-exclamation-triangle"></i>
+            지금 저장소가 <strong>{{ backend }}</strong>입니다. 설정 변경이 서버 재시작이나
+            다른 인스턴스에 유지되지 않을 수 있습니다. 배포에서는 Firestore를 확인하세요.
+        </div>
+        {% endif %}
+
+        <div id="saveStatus" class="alert d-none" role="alert"></div>
+
+        <!-- 연습 모드 on/off -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header">
+                <h2 class="h5 mb-0"><i class="bi bi-toggles"></i> 연습 모드 열기 / 닫기</h2>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small">
+                    끈 모드는 홈 화면에서 '추후 제공'으로 보입니다. 학생이 주소를 직접 알면
+                    들어갈 수는 있으니, 수업 중 안내용으로 쓰세요.
+                </p>
+                {% for mode_key, mode_data in modes.items() %}
+                <div class="form-check form-switch fs-5 mb-2">
+                    <input class="form-check-input mode-toggle" type="checkbox"
+                           role="switch" id="mode-{{ mode_key }}"
+                           data-mode="{{ mode_key }}"
+                           {% if mode_state.get(mode_key) %}checked{% endif %}>
+                    <label class="form-check-label" for="mode-{{ mode_key }}">
+                        {{ mode_data.icon }} {{ mode_data.title }}
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- 자리 연습 예제 목록 -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header">
+                <h2 class="h5 mb-0"><i class="bi bi-list-ul"></i> 자리 연습 예제 목록</h2>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small">
+                    자리 연습에서 학생에게 보여줄 예제 목록을 고릅니다. 앞으로 목록이
+                    늘어나면 여기서 골라 전환할 수 있습니다.
+                </p>
+                {% for set in example_sets %}
+                <div class="form-check mb-2">
+                    <input class="form-check-input example-set-radio" type="radio"
+                           name="exampleSet" id="set-{{ set.id }}" value="{{ set.id }}"
+                           {% if set.id == active_example_set %}checked{% endif %}>
+                    <label class="form-check-label" for="set-{{ set.id }}">
+                        <strong>{{ set.name }}</strong>
+                        <span class="text-muted">— {{ set.description }} ({{ set.count }}줄)</span>
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/teacher.js') }}"></script>
+</body>
+</html>
