@@ -6,6 +6,7 @@ DB에 저장된다(catalog.py). 여기 정의된 것은 코드에 내장된 기�
 """
 
 import random
+import re
 
 # 홈 화면에서 어떤 모드를 열어 둘지의 **기본값**. 실제로 열려 있는지는 교사
 # 대시보드에서 바꿀 수 있고 DB에 저장된다(catalog.effective_modes가 합친다).
@@ -23,26 +24,24 @@ PRACTICE_MODES = {
     },
     '낱말': {
         'title': '낱말 연습',
-        'description': '파이썬 키워드와 함수명을 연습하세요',
+        'description': '터틀 예제의 낱말(키워드·함수명)을 연습하세요',
         'icon': '📝',
         'color': 'success',
-        'available': False,
-        # 다시 열 때 이 배지가 함께 돌아온다.
-        'badge': 'BETA',
+        'available': True,
     },
     '문장': {
         'title': '문장 연습',
-        'description': '파이썬 구문과 표현식을 연습하세요',
+        'description': '터틀 예제의 코드 한 줄을 연습하세요',
         'icon': '📋',
         'color': 'info',
-        'available': False,
+        'available': True,
     },
     '문단': {
         'title': '문단 연습',
-        'description': '완전한 파이썬 코드 블록을 연습하세요',
+        'description': '터틀 예제의 완성 코드 블록을 연습하세요',
         'icon': '📄',
         'color': 'warning',
-        'available': False,
+        'available': True,
     },
 }
 
@@ -183,6 +182,48 @@ def _extract_code_lines(markdown: str) -> list[str]:
     return lines
 
 
+def _extract_code_blocks(markdown: str) -> list[str]:
+    """마크다운의 ```python 블록을 통째로(줄바꿈 유지) 순서대로 돌려준다.
+
+    문단 연습용이다. 블록 안의 빈 줄은 뺀다 — 타자 연습에서 빈 줄(엔터만)
+    입력은 번거롭기 때문이다. 들여쓰기는 그대로 둔다.
+    """
+    blocks: list[str] = []
+    current: list[str] = []
+    in_block = False
+    for raw in markdown.splitlines():
+        stripped = raw.strip()
+        if stripped.startswith('```'):
+            if stripped != '```':          # ```python 시작
+                in_block = True
+                current = []
+            else:                          # 닫는 ```
+                in_block = False
+                code = [line for line in current if line.strip()]
+                if code:
+                    blocks.append('\n'.join(code))
+            continue
+        if in_block:
+            current.append(raw)
+    return blocks
+
+
+def _extract_words(code: str) -> list[str]:
+    """코드에서 파이썬 식별자(키워드·함수명·변수명)만 순서대로 중복 없이 뽑는다.
+
+    낱말 연습용이다. 따옴표 안 문자열("My Game" 등)과 숫자는 낱말이 아니므로
+    먼저 제거한 뒤 식별자만 남긴다.
+    """
+    without_strings = re.sub(r'"[^"]*"|\'[^\']*\'', '', code)
+    words: list[str] = []
+    seen: set[str] = set()
+    for token in re.findall(r'[A-Za-z_][A-Za-z0-9_]*', without_strings):
+        if token not in seen:
+            seen.add(token)
+            words.append(token)
+    return words
+
+
 # 내장 자리 연습 예제 목록. 교사 대시보드에서 활성 목록을 고르면 전환된다.
 # 앞으로 목록을 추가하려면 여기에 항목을 더한다(id → {name, lines}).
 EXAMPLE_SETS = {
@@ -198,38 +239,17 @@ EXAMPLE_SETS = {
 DEFAULT_EXAMPLE_SET = 'turtle'
 
 
+# 낱말·문장·문단 연습은 자리 연습과 **같은 터틀 예제 5개**에서 만든다.
+#   - 문단: 예제 5개의 완성 코드 블록 그대로
+#   - 문장: 예제의 코드 한 줄들(자리 연습과 같은, 중복 없는 줄 목록)
+#   - 낱말: 예제별로 등장하는 식별자(키워드·함수명)를 모은 줄
+# 터틀 예제 원본(TURTLE_SOURCE_MARKDOWN)만 고치면 세 모드가 함께 따라온다.
+_TURTLE_BLOCKS = _extract_code_blocks(TURTLE_SOURCE_MARKDOWN)
+
 PRACTICE_TEXTS = {
-    '낱말': [
-        'print input len str int float bool list dict tuple',
-        'def if else elif for while and or not in is',
-        'True False None return break continue pass',
-        'append remove pop sort index count reverse',
-        'range type isinstance hasattr getattr setattr',
-    ],
-    '문장': [
-        'print("Hello, World!")',
-        'for i in range(10):',
-        'if x > 0 and x < 100:',
-        'name = input("Enter your name: ")',
-        'numbers = [1, 2, 3, 4, 5]',
-    ],
-    '문단': [
-        'def factorial(n):\n'
-        '    if n <= 1:\n'
-        '        return 1\n'
-        '    else:\n'
-        '        return n * factorial(n - 1)',
-
-        'numbers = [1, 2, 3, 4, 5]\n'
-        'for num in numbers:\n'
-        '    if num % 2 == 0:\n'
-        '        print(f"{num} is even")',
-
-        'class Student:\n'
-        '    def __init__(self, name, age):\n'
-        '        self.name = name\n'
-        '        self.age = age',
-    ],
+    '낱말': [' '.join(_extract_words(block)) for block in _TURTLE_BLOCKS],
+    '문장': _extract_code_lines(TURTLE_SOURCE_MARKDOWN),
+    '문단': _TURTLE_BLOCKS,
 }
 
 
