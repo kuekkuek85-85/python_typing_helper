@@ -32,13 +32,47 @@ def test_jari_uses_supplied_lines_over_default():
     assert text == '오직 이 줄'
 
 
+# --- 낱말/문장/문단이 터틀 예제에서 나온다 --------------------------------
+def test_word_sentence_paragraph_come_from_turtle():
+    blocks = content._extract_code_blocks(content.TURTLE_SOURCE_MARKDOWN)
+
+    # 문단: 터틀 예제 5개(주제1~5)의 완성 코드 블록 그대로.
+    assert len(content.PRACTICE_TEXTS['문단']) == 5
+    assert content.PRACTICE_TEXTS['문단'] == blocks
+    # 문단은 여러 줄이고, 빈 줄은 없다(타자 연습에서 빈 줄 입력은 번거롭다).
+    for block in content.PRACTICE_TEXTS['문단']:
+        assert '\n' in block
+        assert '\n\n' not in block
+
+    # 문장: 자리 연습과 같은, 중복 없는 코드 한 줄 목록.
+    assert content.PRACTICE_TEXTS['문장'] == content.EXAMPLE_SETS['turtle']['lines']
+
+    # 낱말: 예제별 식별자만 모은 줄. 문자열/숫자는 낱말이 아니다.
+    words = content.PRACTICE_TEXTS['낱말']
+    assert len(words) == 5
+    assert words[0] == 'import turtle screen Screen title bgcolor setup mainloop'
+    joined = ' '.join(words)
+    assert 'turtle' in joined and 'forward' in joined and 'goto' in joined
+    assert 'My' not in joined.split() and 'Game' not in joined.split()  # 문자열 제외
+    assert '600' not in joined  # 숫자 제외
+
+
+def test_word_sentence_paragraph_build_from_content():
+    for mode in ('낱말', '문장', '문단'):
+        for _ in range(10):
+            assert content.build_practice_text(mode) in content.PRACTICE_TEXTS[mode]
+
+
 # --- catalog 설정 ---------------------------------------------------------
 def test_defaults_come_from_content(record_store):
     catalog._invalidate()
     settings = catalog.get_settings(record_store)
 
+    # 네 모드 모두 기본으로 열려 있다.
     assert settings['modes']['자리'] is True
-    assert settings['modes']['낱말'] is False
+    assert settings['modes']['낱말'] is True
+    assert settings['modes']['문장'] is True
+    assert settings['modes']['문단'] is True
     assert settings['active_example_set'] == 'turtle'
 
 

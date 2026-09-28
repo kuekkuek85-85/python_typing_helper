@@ -397,14 +397,20 @@ def test_only_available_modes_get_a_start_link(client):
     assert linked == expected, f'링크된 모드 {linked} != 열어 둔 모드 {expected}'
 
 
-def test_closed_modes_show_the_coming_soon_button(client):
-    import content
+def test_closed_modes_show_the_coming_soon_button(client, record_store):
+    """닫아 둔 모드는 '추후 제공' 버튼으로 나온다.
+
+    기본값은 네 모드 모두 열려 있으므로, 교사가 한 모드를 닫았을 때를
+    시뮬레이션해 확인한다.
+    """
+    import catalog
+
+    catalog._invalidate()
+    catalog.set_mode_available(record_store, '낱말', False)
+    catalog._invalidate()
 
     page = client.get('/').get_data(as_text=True)
-    closed = [m for m, info in content.PRACTICE_MODES.items() if not info['available']]
-
-    assert closed, '닫아 둔 모드가 하나도 없다면 이 테스트는 의미가 없다'
-    assert page.count('coming-soon-btn') == len(closed)
+    assert page.count('coming-soon-btn') == 1
 
 
 def test_closed_modes_still_work_by_direct_url(client):
