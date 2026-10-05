@@ -74,9 +74,9 @@
                     <div class="card-body">
                         <!-- 문제 텍스트 표시 영역 -->
                         <div class="practice-text-container mb-4">
-                            {# 자리 연습은 한 문자씩 크게 확대해 보여준다(타일 표시). #}
+                            {# 자리: 한 문자씩 확대 타일. 문단: 긴 코드라 높이 제한+세로 스크롤. #}
                             <div id="practiceText"
-                                 class="practice-text{% if mode == '자리' %} practice-text-jari-tiles{% endif %}">
+                                 class="practice-text{% if mode == '자리' %} practice-text-jari-tiles{% elif mode == '문단' %} practice-text-scroll{% endif %}">
                                 <!-- JavaScript로 동적 로드 -->
                                 연습 텍스트를 불러오는 중...
                             </div>
