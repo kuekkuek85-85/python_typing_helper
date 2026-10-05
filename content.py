@@ -160,6 +160,109 @@ screen.mainloop()
 '''
 
 
+# 두 번째 예제 「주인공 이동하기」. 방향키(←·→)로 네모 주인공을 좌우로 움직이는
+# 완성 프로그램이다. 첫 예제와 같은 방식으로 단계별(무대→주인공→이동 함수→키
+# 연결)로 쌓아 가며, 마지막 단계가 완성 코드다. 단계로 나누면 문단·낱말 연습에
+# 변화를 줄 수 있고, 첫 예제(주제1~5)와 흐름이 같아진다.
+TURTLE_MOVE_SOURCE_MARKDOWN = '''# 파이썬 타자 도우미 — 터틀 예제 2 「주인공 이동하기」 (정답)
+
+방향키로 네모 주인공을 좌우로 움직이는 완성 코드입니다. 단계별로 쌓아 가며,
+마지막 단계(키 연결)가 완성 프로그램입니다.
+
+---
+
+## 단계1 — 무대 (screen)
+
+```python
+import turtle
+
+screen = turtle.Screen()
+screen.setup(400, 500)
+
+screen.mainloop()
+```
+
+## 단계2 — 주인공 (shape · goto)
+
+```python
+import turtle
+
+screen = turtle.Screen()
+screen.setup(400, 500)
+
+player = turtle.Turtle()
+player.shape("square")
+player.penup()
+player.goto(0, -200)
+
+screen.mainloop()
+```
+
+## 단계3 — 이동 함수 (xcor · setx)
+
+```python
+import turtle
+
+screen = turtle.Screen()
+screen.setup(400, 500)
+
+player = turtle.Turtle()
+player.shape("square")
+player.penup()
+player.goto(0, -200)
+
+def go_left():
+    x = player.xcor()
+    player.setx(x - 20)
+
+def go_right():
+    x = player.xcor()
+    player.setx(x + 20)
+
+screen.mainloop()
+```
+
+## 단계4 — 키 연결 (listen · onkeypress) · 완성
+
+```python
+import turtle
+
+screen = turtle.Screen()
+screen.setup(400, 500)
+
+player = turtle.Turtle()
+player.shape("square")
+player.penup()
+player.goto(0, -200)
+
+def go_left():
+    x = player.xcor()
+    player.setx(x - 20)
+
+def go_right():
+    x = player.xcor()
+    player.setx(x + 20)
+
+screen.listen()
+screen.onkeypress(go_left, "Left")
+screen.onkeypress(go_right, "Right")
+
+screen.mainloop()
+```
+
+---
+
+## 참고: 빈칸(★★★) 자리 (타자 도우미에서 강조할 부분)
+
+| 단계 | 직접 채우는 ★★★ 자리 |
+|---|---|
+| 1 무대 | `400, 500`(값) |
+| 2 주인공 | `"square"`(값) · `penup`(함수) · `0, -200`(값) |
+| 3 이동 함수 | `xcor`(함수) · `setx`(함수) · `20`(값) |
+| 4 키 연결 | `listen`(함수) · `onkeypress`(함수) · `"Left"` · `"Right"`(값) |
+'''
+
+
 def _extract_code_lines(markdown: str) -> list[str]:
     """마크다운의 ```python 블록에서 코드 줄만 뽑아 순서대로 중복 없이 돌려준다.
 
@@ -224,32 +327,66 @@ def _extract_words(code: str) -> list[str]:
     return words
 
 
-# 내장 자리 연습 예제 목록. 교사 대시보드에서 활성 목록을 고르면 전환된다.
-# 앞으로 목록을 추가하려면 여기에 항목을 더한다(id → {name, lines}).
+def _build_example_set(name: str, description: str, source_markdown: str) -> dict:
+    """예제 원본 마크다운 하나에서 네 모드가 쓸 텍스트를 모두 파생한다.
+
+      - lines : 코드 한 줄들(중복 없이). 자리·문장 연습이 쓴다.
+      - blocks: ```python 블록 전체. 문단 연습이 쓴다.
+      - words : 블록별 식별자(키워드·함수명)를 모은 줄. 낱말 연습이 쓴다.
+    원본(source_markdown) 하나만 고치면 네 모드가 함께 따라온다.
+    """
+    blocks = _extract_code_blocks(source_markdown)
+    return {
+        'name': name,
+        'description': description,
+        'source_markdown': source_markdown,
+        'lines': _extract_code_lines(source_markdown),
+        'blocks': blocks,
+        'words': [' '.join(_extract_words(block)) for block in blocks],
+    }
+
+
+# 내장 예제 목록. 교사 대시보드에서 활성 목록을 고르면 네 모드가 모두 전환된다.
+# 앞으로 목록을 추가하려면 여기에 _build_example_set(...) 항목을 더한다.
 EXAMPLE_SETS = {
-    'turtle': {
-        'name': '터틀 타이핑 예제',
-        'description': '정보 15·16차 터틀 예제 코드를 한 줄씩',
-        'lines': _extract_code_lines(TURTLE_SOURCE_MARKDOWN),
-        'source_markdown': TURTLE_SOURCE_MARKDOWN,
-    },
+    'turtle': _build_example_set(
+        '터틀 타이핑 예제',
+        '정보 15·16차 터틀 예제 코드(주제1~5)',
+        TURTLE_SOURCE_MARKDOWN,
+    ),
+    'turtle_move': _build_example_set(
+        '터틀 예제 2 · 주인공 이동하기',
+        '방향키로 주인공을 움직이는 터틀 예제(단계1~4)',
+        TURTLE_MOVE_SOURCE_MARKDOWN,
+    ),
 }
 
-# 처음(교사가 아직 아무것도 안 바꿨을 때) 자리 연습이 쓰는 목록.
+# 처음(교사가 아직 아무것도 안 바꿨을 때) 쓰는 예제 목록.
 DEFAULT_EXAMPLE_SET = 'turtle'
 
 
-# 낱말·문장·문단 연습은 자리 연습과 **같은 터틀 예제 5개**에서 만든다.
-#   - 문단: 예제 5개의 완성 코드 블록 그대로
-#   - 문장: 예제의 코드 한 줄들(자리 연습과 같은, 중복 없는 줄 목록)
-#   - 낱말: 예제별로 등장하는 식별자(키워드·함수명)를 모은 줄
-# 터틀 예제 원본(TURTLE_SOURCE_MARKDOWN)만 고치면 세 모드가 함께 따라온다.
-_TURTLE_BLOCKS = _extract_code_blocks(TURTLE_SOURCE_MARKDOWN)
+# 모드별로 예제 세트의 어떤 파생 텍스트를 쓰는지.
+# 자리·문장은 코드 한 줄, 문단은 블록 전체, 낱말은 식별자 줄.
+_MODE_TEXT_KEY = {
+    '자리': 'lines',
+    '문장': 'lines',
+    '문단': 'blocks',
+    '낱말': 'words',
+}
 
+
+def texts_for_mode(example_set: dict, mode: str) -> list[str]:
+    """예제 세트에서 해당 모드가 쓸 후보 텍스트 목록을 돌려준다."""
+    key = _MODE_TEXT_KEY.get(mode)
+    if key is None:
+        raise KeyError(mode)
+    return example_set[key]
+
+
+# 기본 예제 세트에서 파생한 낱말·문장·문단 텍스트(하위 호환·직접 참조용).
 PRACTICE_TEXTS = {
-    '낱말': [' '.join(_extract_words(block)) for block in _TURTLE_BLOCKS],
-    '문장': _extract_code_lines(TURTLE_SOURCE_MARKDOWN),
-    '문단': _TURTLE_BLOCKS,
+    mode: texts_for_mode(EXAMPLE_SETS[DEFAULT_EXAMPLE_SET], mode)
+    for mode in ('낱말', '문장', '문단')
 }
 
 
@@ -260,20 +397,15 @@ def _choose(candidates: list[str], exclude: str | None) -> str:
 
 
 def build_practice_text(mode: str, exclude: str | None = None,
-                        jari_lines: list[str] | None = None) -> str:
+                        texts: list[str] | None = None) -> str:
     """모드에 맞는 연습 텍스트를 하나 돌려준다.
 
     exclude: 직전에 사용한 텍스트. 가능하면 연속으로 같은 텍스트를 주지 않는다.
-    jari_lines: 자리 연습에 쓸 예제 줄 목록. 없으면 기본 목록을 쓴다. 교사가
-        고른 활성 목록을 catalog가 여기로 넘긴다.
+    texts: 이 모드가 쓸 후보 목록. 없으면 기본 예제 세트에서 파생한 것을 쓴다.
+        교사가 고른 활성 예제 세트의 텍스트를 catalog가 여기로 넘긴다.
     """
-    if mode == '자리':
-        lines = jari_lines or EXAMPLE_SETS[DEFAULT_EXAMPLE_SET]['lines']
-        if not lines:
-            raise KeyError('자리')
-        return _choose(lines, exclude)
-
-    texts = PRACTICE_TEXTS.get(mode, [])
+    if texts is None:
+        texts = texts_for_mode(EXAMPLE_SETS[DEFAULT_EXAMPLE_SET], mode)
     if not texts:
         raise KeyError(mode)
     return _choose(texts, exclude)

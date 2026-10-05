@@ -108,11 +108,24 @@ def active_example_set_id(store) -> str:
     return get_settings(store)['active_example_set']
 
 
+def active_example_set(store) -> dict:
+    """지금 활성인 예제 세트(없거나 이상하면 기본 세트)."""
+    set_id = active_example_set_id(store)
+    return content.EXAMPLE_SETS.get(set_id) or content.EXAMPLE_SETS[content.DEFAULT_EXAMPLE_SET]
+
+
 def active_example_lines(store) -> list[str]:
     """자리 연습이 지금 쓸 예제 줄 목록."""
-    set_id = active_example_set_id(store)
-    example_set = content.EXAMPLE_SETS.get(set_id) or content.EXAMPLE_SETS[content.DEFAULT_EXAMPLE_SET]
-    return example_set['lines']
+    return active_example_set(store)['lines']
+
+
+def active_texts(store, mode: str) -> list[str]:
+    """해당 모드가 지금 쓸 후보 텍스트 목록(활성 예제 세트 기준).
+
+    네 모드(자리·문장·문단·낱말) 모두 활성 예제 세트에서 나온다. 교사가
+    대시보드에서 예제를 바꾸면 네 모드가 함께 전환된다.
+    """
+    return content.texts_for_mode(active_example_set(store), mode)
 
 
 def example_set_choices() -> list[dict]:
@@ -184,6 +197,15 @@ def ensure_backup(store, set_id: str = content.DEFAULT_EXAMPLE_SET) -> bool:
     except Exception as error:  # noqa: BLE001
         logger.warning("예제 백업을 저장하지 못했습니다(%s): %s", set_id, error)
         return False
+
+
+def ensure_backups(store) -> list[str]:
+    """내장 예제 세트를 모두 DB에 백업한다. 새로 만든 세트의 id 목록을 돌려준다."""
+    created = []
+    for set_id in content.EXAMPLE_SETS:
+        if ensure_backup(store, set_id):
+            created.append(set_id)
+    return created
 
 
 def read_backup(store, set_id: str = content.DEFAULT_EXAMPLE_SET) -> dict | None:

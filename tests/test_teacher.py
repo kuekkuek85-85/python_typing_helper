@@ -28,7 +28,7 @@ def test_jari_practice_text_comes_from_turtle_set():
 
 
 def test_jari_uses_supplied_lines_over_default():
-    text = content.build_practice_text('자리', jari_lines=['오직 이 줄'])
+    text = content.build_practice_text('자리', texts=['오직 이 줄'])
     assert text == '오직 이 줄'
 
 
@@ -122,6 +122,41 @@ def test_stored_unknown_example_set_falls_back(record_store):
     # _merge가 알 수 없는 id를 무시하므로 기본값으로 돌아간다.
     assert catalog.active_example_set_id(record_store) == 'turtle'
     assert catalog.active_example_lines(record_store)
+
+
+# --- 두 번째 예제 「주인공 이동하기」 ------------------------------------
+def test_move_example_set_exists_and_derives_all_modes():
+    move = content.EXAMPLE_SETS['turtle_move']
+    assert move['name'] == '터틀 예제 2 · 주인공 이동하기'
+    # 네 모드가 쓸 파생 텍스트가 모두 있다.
+    assert move['lines'] and move['blocks'] and move['words']
+    # 방향키 이동 예제의 핵심 요소가 들어 있다.
+    assert 'screen.listen()' in move['lines']
+    assert any('onkeypress' in line for line in move['lines'])
+    # 문단(블록)은 들여쓰기를 유지한다(함수 본문).
+    assert any('    x = player.xcor()' in block for block in move['blocks'])
+
+
+def test_selecting_example_set_switches_all_four_modes(record_store):
+    catalog._invalidate()
+    catalog.set_active_example_set(record_store, 'turtle_move')
+    catalog._invalidate()
+
+    move = content.EXAMPLE_SETS['turtle_move']
+    assert catalog.active_texts(record_store, '자리') == move['lines']
+    assert catalog.active_texts(record_store, '문장') == move['lines']
+    assert catalog.active_texts(record_store, '문단') == move['blocks']
+    assert catalog.active_texts(record_store, '낱말') == move['words']
+
+
+def test_ensure_backups_covers_every_set(record_store):
+    created = catalog.ensure_backups(record_store)
+    assert set(created) == set(content.EXAMPLE_SETS)      # 처음엔 전부 만든다
+    assert catalog.ensure_backups(record_store) == []     # 이미 있으면 다시 안 만든다
+
+    saved = catalog.read_backup(record_store, 'turtle_move')
+    assert saved['name'] == '터틀 예제 2 · 주인공 이동하기'
+    assert 'screen.listen()' in saved['lines']
 
 
 # --- 예제 백업 ------------------------------------------------------------
