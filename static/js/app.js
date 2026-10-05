@@ -485,8 +485,25 @@
             }
         }
 
-        // 자리 연습은 지금 입력할 타일(확대된 글자)을 가운데로 스크롤한다.
+        // 자리: 확대 타일을 가로 가운데로. 문단: 현재 줄을 코드 박스 안에 보이게.
         if (window.currentMode === '자리') centerCurrentTile();
+        else if (window.currentMode === '문단') keepCurrentLineVisible();
+    }
+
+    /** 문단 연습에서 현재 글자가 높이 제한된 코드 박스 밖으로 나가면 세로로 따라 스크롤한다. */
+    function keepCurrentLineVisible() {
+        var container = elements.practiceText;   // 세로 스크롤 박스(.practice-text-scroll)
+        var currentSpan = container.querySelector('span.current');
+        if (!container || !currentSpan) return;
+
+        var cRect = container.getBoundingClientRect();
+        var sRect = currentSpan.getBoundingClientRect();
+        var margin = 24;   // 위/아래로 한 줄 정도 여유를 둔다.
+        if (sRect.top < cRect.top) {
+            container.scrollTop -= (cRect.top - sRect.top) + margin;
+        } else if (sRect.bottom > cRect.bottom) {
+            container.scrollTop += (sRect.bottom - cRect.bottom) + margin;
+        }
     }
 
     /** 자리 타일 표시에서 현재 글자 타일을 컨테이너 가운데로 가져온다. */
