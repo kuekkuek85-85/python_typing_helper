@@ -490,13 +490,12 @@ def _register_routes(app: Flask) -> None:
         if mode not in content.PRACTICE_MODES:
             return jsonify({'error': '올바르지 않은 연습 모드입니다.'}), 400
 
-        # 자리 연습은 교사가 고른 활성 예제 목록을 쓴다(catalog). 다른 모드는
-        # jari_lines를 무시한다.
+        # 네 모드 모두 교사가 고른 활성 예제 세트에서 텍스트를 가져온다(catalog).
         try:
             text = content.build_practice_text(
                 mode,
                 exclude=session.get('last_practice_text'),
-                jari_lines=catalog.active_example_lines(_store()) if mode == '자리' else None,
+                texts=catalog.active_texts(_store(), mode),
             )
         except KeyError:
             return jsonify({'error': '연습 텍스트를 찾을 수 없습니다.'}), 404
@@ -515,9 +514,9 @@ def _register_routes(app: Flask) -> None:
             return render_template('teacher_login.html')
 
         store = _store()
-        # 「터틀 타이핑 예제」백업이 DB에 없으면 이때 한 번 만든다(있으면 그대로 둔다).
+        # 내장 예제 세트 백업이 DB에 없으면 이때 한 번 만든다(있으면 그대로 둔다).
         # 인증된 교사가 여는 드문 경로라 상시 요청 경로에 부담을 주지 않는다.
-        catalog.ensure_backup(store)
+        catalog.ensure_backups(store)
         settings = catalog.get_settings(store)
         return render_template(
             'teacher.html',
