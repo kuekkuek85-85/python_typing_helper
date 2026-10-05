@@ -161,68 +161,17 @@ screen.mainloop()
 
 
 # 두 번째 예제 「주인공 이동하기」. 방향키(←·→)로 네모 주인공을 좌우로 움직이는
-# 완성 프로그램이다. 첫 예제와 같은 방식으로 단계별(무대→주인공→이동 함수→키
-# 연결)로 쌓아 가며, 마지막 단계가 완성 코드다. 단계로 나누면 문단·낱말 연습에
-# 변화를 줄 수 있고, 첫 예제(주제1~5)와 흐름이 같아진다.
+# **하나의 완성 프로그램**이다. 문단 연습이 늘 완성 코드 전체(방향키 연결 포함)를
+# 보여주도록 코드 블록을 하나로 둔다. 쪼개 두면 문단이 조각(프리픽스)만 보여 줘
+# 방향키 연결 부분이 안 나오는 문제가 있었다.
+# (한글 주석은 연습 입력이 한글을 막으므로 코드 블록에 넣지 않는다.)
 TURTLE_MOVE_SOURCE_MARKDOWN = '''# 파이썬 타자 도우미 — 터틀 예제 2 「주인공 이동하기」 (정답)
 
-방향키로 네모 주인공을 좌우로 움직이는 완성 코드입니다. 단계별로 쌓아 가며,
-마지막 단계(키 연결)가 완성 프로그램입니다.
+방향키(←·→)로 네모 주인공을 좌우로 움직이는 완성 코드입니다.
 
 ---
 
-## 단계1 — 무대 (screen)
-
-```python
-import turtle
-
-screen = turtle.Screen()
-screen.setup(400, 500)
-
-screen.mainloop()
-```
-
-## 단계2 — 주인공 (shape · goto)
-
-```python
-import turtle
-
-screen = turtle.Screen()
-screen.setup(400, 500)
-
-player = turtle.Turtle()
-player.shape("square")
-player.penup()
-player.goto(0, -200)
-
-screen.mainloop()
-```
-
-## 단계3 — 이동 함수 (xcor · setx)
-
-```python
-import turtle
-
-screen = turtle.Screen()
-screen.setup(400, 500)
-
-player = turtle.Turtle()
-player.shape("square")
-player.penup()
-player.goto(0, -200)
-
-def go_left():
-    x = player.xcor()
-    player.setx(x - 20)
-
-def go_right():
-    x = player.xcor()
-    player.setx(x + 20)
-
-screen.mainloop()
-```
-
-## 단계4 — 키 연결 (listen · onkeypress) · 완성
+## 완성 코드
 
 ```python
 import turtle
@@ -254,12 +203,12 @@ screen.mainloop()
 
 ## 참고: 빈칸(★★★) 자리 (타자 도우미에서 강조할 부분)
 
-| 단계 | 직접 채우는 ★★★ 자리 |
+| 부분 | 직접 채우는 ★★★ 자리 |
 |---|---|
-| 1 무대 | `400, 500`(값) |
-| 2 주인공 | `"square"`(값) · `penup`(함수) · `0, -200`(값) |
-| 3 이동 함수 | `xcor`(함수) · `setx`(함수) · `20`(값) |
-| 4 키 연결 | `listen`(함수) · `onkeypress`(함수) · `"Left"` · `"Right"`(값) |
+| 무대 | `400, 500`(값) |
+| 주인공 | `"square"`(값) · `penup`(함수) · `0, -200`(값) |
+| 이동 함수 | `xcor`(함수) · `setx`(함수) · `20`(값) |
+| 키 연결 | `listen`(함수) · `onkeypress`(함수) · `"Left"` · `"Right"`(값) |
 '''
 
 
@@ -356,7 +305,7 @@ EXAMPLE_SETS = {
     ),
     'turtle_move': _build_example_set(
         '터틀 예제 2 · 주인공 이동하기',
-        '방향키로 주인공을 움직이는 터틀 예제(단계1~4)',
+        '방향키로 주인공을 움직이는 완성 터틀 프로그램',
         TURTLE_MOVE_SOURCE_MARKDOWN,
     ),
 }
