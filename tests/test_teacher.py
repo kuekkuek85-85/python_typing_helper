@@ -137,6 +137,22 @@ def test_move_example_set_exists_and_derives_all_modes():
     assert any('    x = player.xcor()' in block for block in move['blocks'])
 
 
+def test_move_paragraph_always_includes_key_binding():
+    """문단 연습이 늘 완성 코드(방향키 연결 포함)를 보여준다.
+
+    예전에는 단계별로 쪼개져 있어 문단이 조각(프리픽스)만 보여 줄 때는
+    방향키 연결 3줄이 안 나왔다. 완성 프로그램 하나로 두어 항상 포함한다.
+    """
+    move = content.EXAMPLE_SETS['turtle_move']
+    assert len(move['blocks']) == 1
+    for line in ('screen.listen()',
+                 'screen.onkeypress(go_left, "Left")',
+                 'screen.onkeypress(go_right, "Right")'):
+        assert line in move['blocks'][0]
+    # 문단 연습이 돌려주는 텍스트에도 반드시 들어 있다.
+    assert 'screen.listen()' in content.build_practice_text('문단', texts=move['blocks'])
+
+
 def test_selecting_example_set_switches_all_four_modes(record_store):
     catalog._invalidate()
     catalog.set_active_example_set(record_store, 'turtle_move')
