@@ -265,6 +265,78 @@ def _register_routes(app: Flask) -> None:
         떨어지는 파이썬 낱말을 타이핑해 맞히는 클라이언트 게임이다."""
         return render_template('game_word_shooter.html', words=content.GAME_WORDS)
 
+    # 게임 순위표는 연습 명예의 전당과 저장소 네임스페이스를 분리한다(mode='game:<id>').
+    # content.PRACTICE_MODES를 도는 홈 순위표에는 절대 섞이지 않는다.
+    GAME_IDS = frozenset({'word-shooter'})
+
+    def _game_mode(game):
+        return 'game:' + game
+
+    @app.route('/api/game/records', methods=['POST'])
+    def save_game_record():
+        """게임 점수 저장(재미용 순위표).
+
+        게임은 클라이언트에서 돌아 점수 위조가 쉬우므로 순위에 '반영은 하되'
+        방어는 느슨하다 — 학번 형식·점수 상한·제출 빈도만 본다. 연습 기록과
+        저장소 mode 네임스페이스가 다르다.
+        """
+        payload = _json_body()
+        student_id = (payload.get('student_id') or '').strip()
+        game = payload.get('game')
+        score = payload.get('score')
+
+        if game not in GAME_IDS:
+            return jsonify({'error': '알 수 없는 게임입니다.'}), 400
+
+        is_valid, message = scoring.validate_student_id(student_id)
+        if not is_valid:
+            return jsonify({'error': message}), 400
+
+        # bool은 int의 하위형이라 따로 막는다. 터무니없는 위조 점수는 상한으로 거른다.
+        if (not isinstance(score, int) or isinstance(score, bool)
+                or not 0 <= score <= config.GAME_MAX_SCORE):
+            return jsonify({'error': '점수가 올바르지 않습니다.'}), 400
+
+        # 제출 빈도 제한. 연습 제출과 섞이지 않도록 키에 game: 접두사를 둔다.
+        if not _rate_limiter().allow(_game_mode(student_id)):
+            return jsonify({
+                'error': f'너무 빠른 제출입니다. {config.RATE_LIMIT_WINDOW // 60}분당 '
+                         f'최대 {config.MAX_SUBMISSIONS_PER_WINDOW}번만 등록할 수 있습니다.'
+            }), 429
+
+        try:
+            saved = _store().add(student_id=student_id, mode=_game_mode(game),
+                                 wpm=0, accuracy=0.0, score=score, duration_sec=0)
+        except Exception as error:  # noqa: BLE001 - 저장 실패는 일반 메시지로 알린다
+            logger.exception('게임 점수 저장 실패: %s', error)
+            return jsonify({'error': '점수를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.'}), 503
+
+        logger.info('게임 점수 저장: %s, %s, %s점', student_id, game, score)
+        return jsonify({'success': True, 'id': saved['id'], 'score': score}), 201
+
+    @app.route('/api/game/records')
+    def get_game_records():
+        """게임 순위표 상위 기록."""
+        game = request.args.get('game', 'word-shooter')
+        if game not in GAME_IDS:
+            return jsonify({'error': '알 수 없는 게임입니다.'}), 400
+
+        try:
+            records = _store().top(_game_mode(game), config.GAME_LEADERBOARD_SIZE)
+        except Exception as error:  # noqa: BLE001
+            logger.exception('게임 순위 조회 실패: %s', error)
+            return jsonify({'error': '순위를 불러오지 못했습니다.'}), 503
+
+        return jsonify({
+            'success': True,
+            'game': game,
+            'records': [{
+                'rank': record.get('rank'),
+                'student_id': record.get('student_id'),
+                'score': record.get('score'),
+            } for record in records],
+        })
+
     @app.route('/health')
     def health():
         """헬스체크 - 저장소 연결 상태와 **설정이 잘못된 이유**까지 알려준다.

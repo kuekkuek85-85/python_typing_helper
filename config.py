@@ -129,3 +129,10 @@ SEARCH_MIN_LENGTH = _env_int("SEARCH_MIN_LENGTH", 2)
 # 학생 성적을 지우는 기능은 없지만 모드 on/off·예제 목록을 바꾸므로, 운영에서는
 # TEACHER_PASSWORD를 따로 설정하는 것을 권한다.
 TEACHER_PASSWORD = os.environ.get("TEACHER_PASSWORD", "123456")
+
+# --- 타자 게임 ------------------------------------------------------------
+# 게임 순위표는 재미용이라 서버 검증이 느슨하다(점수가 클라이언트에서 나온다).
+# 터무니없는 위조 점수만 거르는 상한과, 순위표에 보여줄 개수.
+GAME_MAX_SCORE = _env_int("GAME_MAX_SCORE", 100_000)
+GAME_LEADERBOARD_SIZE = _env_int("GAME_LEADERBOARD_SIZE", 10)
+
