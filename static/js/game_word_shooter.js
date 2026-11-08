@@ -11,10 +11,13 @@
     var WORDS = (window.gameWords && window.gameWords.length) ? window.gameWords
         : ['print', 'def', 'for', 'turtle', 'range'];
     var BEST_KEY = 'wordShooterBest';
+    var STUDENT_KEY = 'gameStudentId';
+    var GAME_ID = 'word-shooter';
 
     var el = {};
     var state = null;
     var rafId = null;
+    var lastScore = 0;     // 방금 끝난 판의 점수(순위 등록용)
 
     document.addEventListener('DOMContentLoaded', function () {
         el = {
@@ -27,14 +30,32 @@
             overlay: document.getElementById('gameOverlay'),
             overlayTitle: document.getElementById('overlayTitle'),
             overlayText: document.getElementById('overlayText'),
-            startBtn: document.getElementById('startBtn')
+            startBtn: document.getElementById('startBtn'),
+            scoreSubmit: document.getElementById('scoreSubmit'),
+            studentId: document.getElementById('gameStudentId'),
+            submitBtn: document.getElementById('submitScoreBtn'),
+            submitStatus: document.getElementById('submitStatus'),
+            leaderboardBody: document.getElementById('leaderboardBody'),
+            refreshBtn: document.getElementById('refreshLeaderboard')
         };
 
         el.best.textContent = loadBest();
         el.startBtn.addEventListener('click', startGame);
         el.input.addEventListener('input', handleInput);
+        el.submitBtn.addEventListener('click', submitScore);
+        el.studentId.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') { e.preventDefault(); submitScore(); }
+        });
+        el.refreshBtn.addEventListener('click', fetchLeaderboard);
         // 한글 입력 모드면 글자가 안 맞으므로, 연습 화면과 같은 영문 힌트를 준다.
         el.input.setAttribute('lang', 'en');
+
+        try {
+            var saved = localStorage.getItem(STUDENT_KEY);
+            if (saved) el.studentId.value = saved;
+        } catch (e) { /* 저장소 접근 불가 시 무시 */ }
+
+        fetchLeaderboard();
 
         // 탭을 벗어나면 잠시 멈춰 낱말이 쌓이지 않게 한다.
         document.addEventListener('visibilitychange', function () {
@@ -71,6 +92,7 @@
         for (var i = 0; i < old.length; i++) old[i].remove();
 
         el.overlay.classList.add('d-none');
+        el.scoreSubmit.classList.add('d-none');
         el.input.disabled = false;
         el.input.value = '';
         el.input.focus();
@@ -89,6 +111,12 @@
         state.running = false;
         if (rafId) window.cancelAnimationFrame(rafId);
         el.input.disabled = true;
+        lastScore = state.score;
+
+        // 남아 있던 낱말을 치워 게임오버 화면을 깔끔하게 한다.
+        var remaining = el.area.querySelectorAll('.game-word');
+        for (var i = 0; i < remaining.length; i++) remaining[i].remove();
+        state.words = [];
 
         var best = loadBest();
         if (state.score > best) { best = state.score; saveBest(best); }
@@ -101,6 +129,17 @@
             (newRecord ? ' · 🎉 최고 기록!' : ' · 최고 ' + best),
             '다시 하기'
         );
+
+        // 점수가 있으면 순위 등록 폼을 연다.
+        if (state.score > 0) {
+            el.submitStatus.textContent = '';
+            el.submitStatus.className = 'form-text';
+            el.submitBtn.disabled = false;
+            el.studentId.disabled = false;
+            el.scoreSubmit.classList.remove('d-none');
+        } else {
+            el.scoreSubmit.classList.add('d-none');
+        }
     }
 
     function showOverlay(title, html, btnLabel) {
@@ -272,5 +311,75 @@
 
     function escapeHtml(s) {
         return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // --- 게임 순위표 (서버 저장) -----------------------------------------
+    function submitScore() {
+        var studentId = (el.studentId.value || '').trim();
+        if (!studentId) {
+            setSubmitStatus('학번과 이름을 입력하세요. (예: 10218 홍길동)', true);
+            return;
+        }
+
+        el.submitBtn.disabled = true;
+        setSubmitStatus('등록 중...', false);
+
+        fetch('/api/game/records', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ game: GAME_ID, student_id: studentId, score: lastScore })
+        })
+            .then(function (res) {
+                return res.json().then(function (data) { return { ok: res.ok, data: data }; });
+            })
+            .then(function (r) {
+                if (!r.ok) {
+                    setSubmitStatus(r.data.error || '등록하지 못했습니다.', true);
+                    el.submitBtn.disabled = false;
+                    return;
+                }
+                try { localStorage.setItem(STUDENT_KEY, studentId); } catch (e) { /* 무시 */ }
+                setSubmitStatus('✅ 순위에 등록했습니다!', false);
+                el.studentId.disabled = true;
+                fetchLeaderboard();
+            })
+            .catch(function () {
+                setSubmitStatus('네트워크 오류로 등록하지 못했습니다.', true);
+                el.submitBtn.disabled = false;
+            });
+    }
+
+    function setSubmitStatus(msg, isError) {
+        el.submitStatus.textContent = msg;
+        el.submitStatus.className = 'form-text ' + (isError ? 'text-danger' : 'text-success');
+    }
+
+    function fetchLeaderboard() {
+        fetch('/api/game/records?game=' + encodeURIComponent(GAME_ID))
+            .then(function (res) { return res.json(); })
+            .then(function (data) { renderLeaderboard((data && data.records) || []); })
+            .catch(function () {
+                el.leaderboardBody.innerHTML =
+                    '<tr><td colspan="3" class="text-center text-muted py-3">순위를 불러오지 못했습니다.</td></tr>';
+            });
+    }
+
+    function renderLeaderboard(records) {
+        if (!records.length) {
+            el.leaderboardBody.innerHTML =
+                '<tr><td colspan="3" class="text-center text-muted py-3">' +
+                '아직 기록이 없습니다. 첫 번째 도전자가 되어보세요!</td></tr>';
+            return;
+        }
+        var medals = { 1: '🥇', 2: '🥈', 3: '🥉' };
+        var rows = records.map(function (r) {
+            var rankCell = medals[r.rank] || r.rank;
+            return '<tr>' +
+                '<td class="text-center">' + rankCell + '</td>' +
+                '<td>' + escapeHtml(r.student_id) + '</td>' +
+                '<td class="text-center fw-bold">' + r.score + '</td>' +
+                '</tr>';
+        });
+        el.leaderboardBody.innerHTML = rows.join('');
     }
 })();
