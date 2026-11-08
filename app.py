@@ -259,6 +259,12 @@ def _register_routes(app: Flask) -> None:
             keystroke_flush_ms=config.KEYSTROKE_FLUSH_MS,
         )
 
+    @app.route('/game/word-shooter')
+    def game_word_shooter():
+        """타자 게임 「낱말 슈팅」. 재미용이라 서버 검증·순위표와 분리돼 있고,
+        떨어지는 파이썬 낱말을 타이핑해 맞히는 클라이언트 게임이다."""
+        return render_template('game_word_shooter.html', words=content.GAME_WORDS)
+
     @app.route('/health')
     def health():
         """헬스체크 - 저장소 연결 상태와 **설정이 잘못된 이유**까지 알려준다.

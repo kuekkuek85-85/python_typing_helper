@@ -358,3 +358,24 @@ def build_practice_text(mode: str, exclude: str | None = None,
     if not texts:
         raise KeyError(mode)
     return _choose(texts, exclude)
+
+
+# --- 타자 게임 ------------------------------------------------------------
+# 「낱말 슈팅」게임에서 위에서 떨어지는 낱말 풀. 학생들이 연습에서 본 파이썬
+# 키워드·내장 함수·터틀 메서드로 채워, 게임이 곧 어휘 복습이 되게 한다.
+# 대부분 소문자(초보자가 치기 쉽게)로 두고, True/False/None 같은 실제 표기는
+# 그대로 둬서 Shift 연습도 된다.
+GAME_WORDS = [
+    # 키워드
+    'def', 'for', 'while', 'if', 'else', 'elif', 'return', 'import',
+    'and', 'or', 'not', 'in', 'is', 'break', 'continue', 'pass', 'class',
+    'True', 'False', 'None',
+    # 내장 함수·자료형
+    'print', 'input', 'range', 'len', 'int', 'str', 'float', 'bool',
+    'list', 'dict', 'type', 'append', 'sort', 'sum',
+    # 터틀(학생들이 연습에서 본 것)
+    'turtle', 'screen', 'player', 'setup', 'shape', 'color', 'forward',
+    'left', 'right', 'penup', 'pendown', 'goto', 'setx', 'xcor',
+    'listen', 'onkeypress', 'mainloop',
+]
+
