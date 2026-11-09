@@ -179,10 +179,13 @@
     }
 
     function spawnWord(fallSpeed) {
-        // 지금 떠 있는 낱말과 겹치지 않는 것을 고른다(정확 일치가 헷갈리지 않게).
-        var active = {};
-        for (var i = 0; i < state.words.length; i++) active[state.words[i].text] = true;
-        var pool = WORDS.filter(function (w) { return !active[w]; });
+        // 지금 떠 있는 낱말과 '접두사까지' 겹치지 않는 것만 고른다.
+        //
+        // 같은 글자이거나, 한쪽이 다른 쪽의 앞부분이면(예: "in"⊂"input",
+        // "for"⊂"forward") 안 된다. 둘이 같이 떠 있으면 "input"을 치다가
+        // "in"이 먼저 완성돼 터져 버리고 남은 "put"이 씹히기 때문이다.
+        var activeTexts = state.words.map(function (w) { return w.text; });
+        var pool = WORDS.filter(function (w) { return !collidesWithActive(w, activeTexts); });
         if (!pool.length) return;
         var text = pool[Math.floor(Math.random() * pool.length)];
 
@@ -198,6 +201,15 @@
         node.style.top = '0px';
 
         state.words.push({ el: node, text: text, y: 0, speed: fallSpeed });
+    }
+
+    /** 후보 낱말이 떠 있는 낱말 중 하나와 접두사 관계(한쪽이 다른 쪽의 앞부분)인가. */
+    function collidesWithActive(candidate, activeTexts) {
+        for (var i = 0; i < activeTexts.length; i++) {
+            var t = activeTexts[i];
+            if (candidate.indexOf(t) === 0 || t.indexOf(candidate) === 0) return true;
+        }
+        return false;
     }
 
     function moveWords(dt) {
